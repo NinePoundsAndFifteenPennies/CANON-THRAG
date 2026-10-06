@@ -19,7 +19,7 @@
 
 ## 当前状态
 
-原 TH-RAG 源码已下载到 `thrag/`，上游 commit 为 `6543fc2a8f5aadecd3032352d7d31dcd5791ec73`。根目录已建立 Git 仓库，并准备 README、忽略规则和跨平台换行规则。目标远程是用户 `NinePoundsAndFifteenPennies` 的私有仓库 `CANON-THRAG`，尚待登录后创建并推送。
+原 TH-RAG 源码已下载到 `thrag/`，上游 commit 为 `6543fc2a8f5aadecd3032352d7d31dcd5791ec73`。根目录已完成首次提交，源码、文档、配置模板和示例数据统一管理；密钥、缓存和实验产物已忽略。源码与文档已推送到私有仓库 https://github.com/NinePoundsAndFifteenPennies/CANON-THRAG，本地 `main` 跟踪 `origin/main`。
 
 没有安装依赖、运行 baseline 或产生研究结果。本地编码，服务器运行且可能改代码，双方通过 GitHub 同步；本轮不配置服务器。上游仅有两条示例 QA 和 `contexts_example.txt`，缺 pipeline 要求的 `contexts.txt`；正式数据及 gold chunk 映射需另行准备。
 
@@ -27,9 +27,8 @@
 
 ## 下一步
 
-1. 完成 GitHub 登录、首次提交与私有仓库上传，记录远程地址。
-2. 确认 API、数据和统一协议，做小规模 TH-RAG baseline。
-3. 使用同一抽取缓存比较原版、仅规范化、仅预筛、完整核心，检查合并精度与不变量，报告质量和成本；成功后再补规模与外部基线实验。
+1. 确认 API、数据和统一协议，在服务器启动 TH-RAG baseline。
+2. 使用同一抽取缓存比较原版、仅规范化、仅预筛、完整核心，检查合并精度与不变量，报告质量和成本；成功后再补规模与外部基线实验。
 
 ## 按需阅读
 
