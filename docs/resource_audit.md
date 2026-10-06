@@ -23,7 +23,7 @@
 
 ## 论文与当前网页代码的差异
 
-**默认参数。**[config.py](https://raw.githubusercontent.com/Tiabet/TH-RAG/main/config.py) 的 `_load_environment`（源文件约 32–61 行）与 [.env.example](https://github.com/Tiabet/TH-RAG/blob/main/.env.example) 给 `MAX_TOKENS/OVERLAP=3000/300`、`TOP_K1/TOP_K2=50/10`、long K 为 25/5、`ANSWER_TEMPERATURE=.3`。同时存在 `ALT_MAX_TOKENS/ALT_OVERLAP=1200/100`，但未逐入口确认哪种 chunk 配置实际被使用；不能把默认环境文件当成论文完整配置。Embedding 默认名为 `text-embedding-3-small`；NT/NST min/max 为 5/10 和 10/25；overretrieve factor 为 5。
+**默认参数。**[config.py](../thrag/config.py) 与 [.env.example](../thrag/.env.example) 给 `MAX_TOKENS/OVERLAP=3000/300`、`TOP_K1/TOP_K2=50/10`、long K 为 25/5、`ANSWER_TEMPERATURE=.3`。主建图入口实际使用 `MAX_TOKENS/OVERLAP`，`ALT_MAX_TOKENS/ALT_OVERLAP` 仅被配置类读取，未用于主流程。短答案生成与三元组抽取温度硬编码为 0；`ANSWER_TEMPERATURE` 用于层次选择和长答案，`EVAL_TEMPERATURE` 用于 pairwise judge。不能把默认环境文件当成论文完整配置。Embedding 默认名为 `text-embedding-3-small`；NT/NST min/max 为 5/10 和 10/25；overretrieve factor 为 5。
 
 **候选先全局召回再过滤。**[edge_embedding.py](https://raw.githubusercontent.com/Tiabet/TH-RAG/main/index/edge_embedding.py) 的 `search`（约 149–192 行）在存在 Entity filter 时，先全局取 `K1×factor`，再保留任一端点在 Entity 集合内的边，最多返回 K1；因此可能不足 K1，也不保证等于候选子图内部 exact Top-K1。代码归一化向量后用 FAISS `IndexFlatIP`，数学上是非零向量的 cosine 排名；与 Appendix B 声称“不用 FAISS inner product、自实现 cosine”的工程描述不同。
 
@@ -50,3 +50,45 @@ README 的默认 evaluation 步骤是答案 F1-style 评测，并展示 UltraDom
 假设 LLM 和 embedding 均使用远程 API，本地不加载其模型权重：小样本 4 核/16GB RAM/SSD 预留10GB；两个具体 QA 主实验顺序运行，4–8 核/16–32GB/SSD预留20GB；11M-token 大图建议32–64GB，64GB更适合并行或多份图缓存，SSD预留50GB。均不要求独显；这是工程预留建议，不是作者硬件要求或本地测量。
 
 [FAISS 官方索引说明](https://github.com/facebookresearch/faiss/wiki/Faiss-indexes)给 IndexFlatIP 每向量4d字节：假设10万条1536维向量，仅向量约0.61GB；另有 NetworkX、文本、payload、构建时副本与操作系统开销，不能等同于峰值 RAM。API限流、延迟和预算也会影响实验速度。改用本地模型时重新评估。
+
+## 运行准备：实际配置项与适配点
+
+本节依据固定源码的静态检查；没有安装依赖、导入项目模块、调用模型或运行实验。
+
+- 环境：Python ≥3.10，建议服务器用独立 Python 3.11/3.12 环境；依赖见 `thrag/requirements.txt`，均为版本下限，正式运行后需锁定实际版本。索引用 `faiss-cpu`，没有 GPU 训练入口。
+- 配置位置：`thrag/.env`，由 `.env.example` 复制；密钥只放运行机器，不入 Git。
+- `OPENAI_API_KEY`：当前全部模型客户端共用一个 key。OpenAI SDK 支持 `OPENAI_BASE_URL`，可补入 `.env` 指向兼容服务；[SDK 官方说明](https://github.com/openai/openai-python#configuring-the-http-client)。若 LLM 和 embedding 来自不同服务/凭据，必须拆分客户端，现有源码未分开这两组配置。
+- `DEFAULT_MODEL`：三元组抽取及 Topic/Subtopic 选择；`CHAT_MODEL`：最终回答；`EMBED_MODEL`：证据句/问题向量；`EVAL_MODEL`：仅后续长答案 pairwise judge 使用。答案 F1/Accuracy 计算不调用 judge API。
+- 自定义服务需兼容 `chat.completions`、相应 `response_format` 与 embeddings 接口。路由要求 `json_object`；抽取请求 `text` 并自行解析 JSON。
+- **自定义模型名的 tokenizer 问题**：建图 `chunk_text` 直接调用 `tiktoken.encoding_for_model(DEFAULT_MODEL)`，无未知模型 fallback；换成不认识的服务模型名可能在 API 调用前抛 KeyError。需要显式固定/配置分词器并与 API 模型名解耦。回答 token 计数有 fallback，但不能替代建图适配。
+- 论文主参数应显式设 `MAX_TOKENS=1200`、`OVERLAP=100`、`TOP_K1=30`、`TOP_K2=5`、Topic 5–10、Subtopic 10–25；若跑长答案，另确认 `TOP_K1_LONG/TOP_K2_LONG`，不能让其默认 25/5 混入主协议。`ANSWER_TEMPERATURE=0` 可固定路由/长答随机性，但论文只明确回答温度 0，路由设置应记录为本次配置。
+- 并发先小后大，例如 `MAX_WORKERS=2` 起步，依据服务限流和内存实测调整。问题批处理与每题 Subtopic 选择都有线程池；各问题工作线程创建各自的 GraphRAG/图/索引，会放大并发和内存。
+- `ALT_MAX_TOKENS/ALT_OVERLAP`、`TEMPERATURE`、`MAX_CONTEXT_LENGTH`、`BATCH_SIZE`、`TIMEOUT_SECONDS`、`ENABLE_CACHE/CACHE_TTL` 当前仅解析、未接入相应主逻辑，不能靠修改它们期待限制上下文、超时或自动缓存失效。
+- 缓存按数据集文件名/输出是否存在复用，抽取续跑只检查 chunk ID 和 triples 容器。换模型、chunk 参数或语料需隔离输出/显式重建；错误记录中的空 triples 也可能被当成已完成，需检查失败统计。
+- 建图转换使用 `nx.Graph()` 无向图，同一实体对的关系合并在一个边属性中；论文描述为带类型的有向边。短答 prompt 没有附录中严格的最多 5 词/统一拒答文本要求。应将这些与既有 Retriever 差异一起纳入复现协议。
+
+## 论文实验覆盖
+
+| 论文表/实验 | 固定源码已有 | 仍需准备或补写 |
+|---|---|---|
+| Table 3，TH-RAG 回答质量 | 完整核心链路、短答、F1/Precision/Recall/EM/contains-gold Accuracy | 数据转换、问题 IDs、失败题处理协议；不代表已复现论文分数 |
+| Table 3，chunk 检索质量 | 记录返回 chunk IDs 和 sentence 对应 chunk IDs | gold evidence→chunk 映射；Recall/F1/Recall@5/NDCG@5 计算与排名输出 |
+| Table 2，UltraDomain pairwise | 长答、三维+Overall judge、按 seed 均衡 A/B 顺序 | 四领域对应问题集、另一方法答案、批量比较组织；judge 独立 CLI，不在默认 pipeline 内 |
+| Table 4/14，图统计 | GEXF/NetworkX 图 | 节点/边/连通性统计脚本；LightRAG 对照不在仓库 |
+| Table 6，效率 | 每题检索耗时及证据 context token 日志 | 索引和路由 calls/tokens、生成耗时、离线与总费用统计 |
+| Table 5/7/8/15 | 可改参数并多次调用核心流程 | 分类型报告、去组件开关、预算 sweep、大图构建/编排与汇总均未封装 |
+| Table 16 与其他外部基线 | 无外部方法实现 | 单独获取与运行各基线；代码里的 GraphRAG 类名是 TH-RAG 包装 |
+
+`meta.total_spent` 实际只计 `Retriever.retrieve` 耗时；`context_tokens` 只计拼接证据文本，不含路由/回答 prompt 或最终生成，不能直接当端到端耗时或完整 API token 成本。
+
+## 数据获取与转换
+
+| 数据 | 原始资源 | 获取难点 |
+|---|---|---|
+| MultiHop-RAG | [作者仓库](https://github.com/yixuantt/MultiHop-RAG)、[作者 HF 文件](https://huggingface.co/datasets/yixuantt/MultiHopRAG/tree/main)：2556 queries，`corpus.json` 6.79MB，`MultiHopRAG.json` 5.17MB | 下载容易；保留新闻元数据和 gold evidence，转换当前输入格式 |
+| HotpotQA | [官方页面](https://hotpotqa.github.io/)：distractor dev 标注约44MB，带候选 paragraphs 与 supporting facts | 下载容易；按论文 distractor setting 保留候选段落并建立 chunk 映射，初期不需 FullWiki 全维基语料 |
+| UltraDomain | [HF 文件](https://huggingface.co/datasets/TommyChien/UltraDomain/tree/main)：Agriculture/CS/Legal/Mix 可分开取，共约276MB，20领域全量约2.17GB | 语料公开；本篇论文各域125题的具体问题/生成设置不在源码，需要恢复或按统一协议重建 |
+
+当前接口只有 `data/<name>/contexts.txt` 与 `qa.json`，不会自动下载或转换这些 benchmark。`contexts.txt` 被读成整段文本后连续 chunking；`qa.json` 最低字段为 query/answer，官方问题 ID、文档 ID、证据位置与题型必须另外保留，不能在转换时丢弃。需要补预处理脚本和 provenance/gold chunk 映射。
+
+TH-RAG 作者随机抽取的两个 1000-QA 子集未在固定源码中附带，抽样 seed/IDs 也未给出可直接恢复的文件。因此公开原数据容易获取，精确复刻原论文同一子集仍有缺口。可以建立并公布自己的固定子集，用同一 API 重跑 TH-RAG/CANON，但不能声称已经使用作者原子集。
