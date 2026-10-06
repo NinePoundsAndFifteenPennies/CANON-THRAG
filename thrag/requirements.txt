@@ -1,0 +1,9 @@
+# Runtime dependencies for TH-RAG
+faiss-cpu>=1.10.0
+matplotlib>=3.9.2
+networkx>=3.4.2
+numpy>=1.26.4
+openai>=1.68.2
+python-dotenv>=1.1.0
+tiktoken>=0.9.0
+tqdm>=4.67.1

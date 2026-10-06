@@ -1,0 +1,39 @@
+# Byte-compiled and cache files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments and local secrets
+.env
+.venv/
+venv/
+env/
+ENV/
+
+# Test and tooling cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# Generated artifacts
+results/
+temp/
+*.faiss
+*.gexf
+*.npy
+
+# Editor directories
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
