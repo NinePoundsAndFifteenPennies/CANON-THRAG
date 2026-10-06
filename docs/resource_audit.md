@@ -92,3 +92,15 @@ README 的默认 evaluation 步骤是答案 F1-style 评测，并展示 UltraDom
 当前接口只有 `data/<name>/contexts.txt` 与 `qa.json`，不会自动下载或转换这些 benchmark。`contexts.txt` 被读成整段文本后连续 chunking；`qa.json` 最低字段为 query/answer，官方问题 ID、文档 ID、证据位置与题型必须另外保留，不能在转换时丢弃。需要补预处理脚本和 provenance/gold chunk 映射。
 
 TH-RAG 作者随机抽取的两个 1000-QA 子集未在固定源码中附带，抽样 seed/IDs 也未给出可直接恢复的文件。因此公开原数据容易获取，精确复刻原论文同一子集仍有缺口。可以建立并公布自己的固定子集，用同一 API 重跑 TH-RAG/CANON，但不能声称已经使用作者原子集。
+
+## DeepSeek 与服务器 E5 的组合
+
+用户已确定使用 DeepSeek 官方 V4.1 Flash。当前官方调用名为 `deepseek-flash`，base URL 为 `https://api.deepseek.com`；[官方发布说明](https://api-docs.deepseek.com/updates/)、[JSON 接口示例](https://api-docs.deepseek.com/guides/json_mode/)。运行前显式固定 thinking 模式、输出预算和 API 模型标识，记录日期/版本；尚未进行 API 兼容测试。
+
+用户报告服务器有 `/data/panzheng/bearrag/models/e5-base-v2`。建议先复用此 embedding，是否确为标准模型及文件完整性尚未连接服务器核验。LLM 服务与 embedding 可以独立，原源码共用 API 客户端的实现需要改为独立后端，不能只将 `EMBED_MODEL` 填成一个本地路径。
+
+Tokenizer 将文本转成 token IDs；离线 chunking 用它确定分块长度，API 内部和 E5 输入又分别使用各自的 tokenizer。这三项职责应分开。原默认 GPT-4o-mini 在 tiktoken 中映射到 `o200k_base`；为保持原 chunking 条件，可显式固定这个分块编码，不随 DeepSeek 模型名改变。它只定义本实验的分块协议，不能冒充 DeepSeek 实际 token 数或账单，实际费用统计以 API usage 为准。该分块编码是建议，尚未实施或冻结。
+
+标准 [intfloat/e5-base-v2 模型卡](https://huggingface.co/intfloat/e5-base-v2) 报告：英语模型、768维、最多512输入tokens；检索问题加 `query: `，证据句加 `passage: `，按 mask mean pooling/官方 SentenceTransformer 配置得到并归一化向量。语义聚类的两侧可按官方建议统一用 query 前缀。本地推理需要 PyTorch 和 Transformers/SentenceTransformers，无需重新训练；GPU 可加速，CPU 也能运行。
+
+当前 TH-RAG 对 source sentences 而非1200-token完整chunk做向量化，所以 E5 的512上限不要求把建图chunk改为512。仍应记录超长证据/问题的截断情况；原始句子和来源chunk继续保留。切换 E5 要重建向量索引，所有问题向量也用同一 E5/前缀协议。TH-RAG、CANON及消融共享 DeepSeek/E5 和固定chunk协议；属于换模型条件下的方法复现，原论文数字仅作历史参考。

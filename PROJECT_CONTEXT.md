@@ -26,11 +26,13 @@
 
 没有安装依赖、运行 baseline 或产生研究结果。本地编码，服务器运行且可能改代码，双方通过 GitHub 同步；本轮不配置服务器。上游仅有两条示例 QA 和 `contexts_example.txt`，缺 pipeline 要求的 `contexts.txt`；正式数据及 gold chunk 映射需另行准备。
 
-未定：API 服务商/base URL、LLM 与 embedding、预算、首批数据和问题 IDs、论文忠实或公开代码协议。论文数据子集、gold supporting evidence→chunk 映射与检索评测脚本仍需确认。
+已确定：LLM 使用 DeepSeek 官方 V4.1 Flash，当前官方 API 名为 `deepseek-flash`、地址 `https://api.deepseek.com`；用户已有 key，密钥只放服务器环境配置。Embedding 建议复用服务器 `/data/panzheng/bearrag/models/e5-base-v2`，尚待确认模型文件、版本和运行环境，未实际接入。
+
+未定：embedding 最终配置、预算、首批数据和问题 IDs、论文忠实或公开代码协议。论文数据子集、gold supporting evidence→chunk 映射与检索评测脚本仍需确认。
 
 ## 下一步
 
-1. 确认 LLM/embedding 的服务、模型和统一协议；适配自定义模型 tokenizer，必要时拆分 API 客户端；准备数据转换、gold chunk 映射和评测/成本采集后，在服务器启动 TH-RAG baseline。
+1. 接入 DeepSeek，并把切块分词器与 API 模型名解耦；确认并接入本地 E5，分开 LLM 与 embedding 后端。准备数据转换、gold chunk 映射和评测/成本采集，固定协议后在服务器启动 TH-RAG baseline。
 2. 使用同一抽取缓存比较原版、仅规范化、仅预筛、完整核心，检查合并精度与不变量，报告质量和成本；成功后再补规模与外部基线实验。
 
 ## 按需阅读
