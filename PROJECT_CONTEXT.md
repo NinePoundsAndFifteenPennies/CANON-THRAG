@@ -21,6 +21,8 @@
 
 原 TH-RAG 源码已下载到 `thrag/`，上游 commit 为 `6543fc2a8f5aadecd3032352d7d31dcd5791ec73`。根目录已完成首次提交，源码、文档、配置模板和示例数据统一管理；密钥、缓存和实验产物已忽略。源码与文档已推送到私有仓库 https://github.com/NinePoundsAndFifteenPennies/CANON-THRAG，本地 `main` 跟踪 `origin/main`。
 
+临时下载包、校验文件与上游 Git 备份已清理。本机仅此仓库的 GitHub HTTPS 认证暂引用 `tmp/` 中的便携 CLI 与配置；切换认证后才能移除剩余工具。ChatGPT GitHub 连接已可读取本仓库。
+
 没有安装依赖、运行 baseline 或产生研究结果。本地编码，服务器运行且可能改代码，双方通过 GitHub 同步；本轮不配置服务器。上游仅有两条示例 QA 和 `contexts_example.txt`，缺 pipeline 要求的 `contexts.txt`；正式数据及 gold chunk 映射需另行准备。
 
 未定：API 服务商/base URL、LLM 与 embedding、预算、首批数据和问题 IDs、论文忠实或公开代码协议。论文数据子集、gold supporting evidence→chunk 映射与检索评测脚本仍需确认。
