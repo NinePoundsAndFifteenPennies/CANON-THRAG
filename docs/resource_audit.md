@@ -43,7 +43,7 @@ README 的默认 evaluation 步骤是答案 F1-style 评测，并展示 UltraDom
 
 ## 接续时需要解决
 
-下载后锁定 baseline commit 并复核上述实现差异；找到/恢复论文数据子集与 gold evidence；决定论文忠实还是公开代码协议，并在用户 API 下统一执行。**源码阅读不等于已复现实验，原论文实验材料是否完整齐备仍待确认**。当前进度只维护在根目录 `PROJECT_CONTEXT.md`。
+上游 commit 已固定。接下来确认运行环境、复核实现差异，准备论文数据子集与 gold evidence，再选择统一协议，在用户 API 下验证 baseline。仓库未附完整实验数据，其他数据发布渠道仍需查询；尚未运行实验。当前进度只维护在根目录 `PROJECT_CONTEXT.md`。
 
 ## 硬件估算（2026-10-06，未实测）
 
