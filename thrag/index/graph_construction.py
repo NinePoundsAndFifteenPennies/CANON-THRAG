@@ -1,7 +1,7 @@
 """Graph construction for TH-RAG.
 
 This step chunks a dataset's contexts.txt file, stores the chunk text in a KV store,
-and extracts topic-aware triples for each chunk with an OpenAI model.
+and extracts topic-aware triples for each chunk with the official DeepSeek API.
 """
 
 from __future__ import annotations
@@ -25,13 +25,14 @@ from openai import OpenAI
 from tqdm import tqdm
 
 from config import THRAGConfig, get_config
+from model_services import create_deepseek_client
 from prompt.extract_graph import EXTRACTION_PROMPT
 
 
-def chunk_text(text: str, max_tokens: int, overlap: int, model_name: str) -> list[str]:
+def chunk_text(text: str, max_tokens: int, overlap: int, encoding_name: str) -> list[str]:
     """Split text into overlapping token windows."""
 
-    encoding = tiktoken.encoding_for_model(model_name)
+    encoding = tiktoken.get_encoding(encoding_name)
     tokens = encoding.encode(text)
 
     chunks: list[str] = []
@@ -119,6 +120,7 @@ def call_model(client: OpenAI, model_name: str, chunk_text_value: str, chunk_id:
         temperature=0.0,
         max_tokens=get_config().max_tokens_response,
         response_format={"type": "text"},
+        extra_body=get_config().deepseek_extra_body(),
     )
     content = response.choices[0].message.content or "[]"
     triples = parse_triples_response(content)
@@ -145,8 +147,8 @@ def save_kv_store(output_path: Path, kv_store: dict[str, dict[str, str]]) -> Non
 
 
 def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> str:
-    if not config.openai_api_key:
-        raise ValueError("OPENAI_API_KEY must be configured before running graph construction.")
+    if not config.deepseek_api_key:
+        raise ValueError("DEEPSEEK_API_KEY must be configured before running graph construction.")
 
     input_path = config.get_contexts_file()
     output_path = config.get_graph_json_file()
@@ -156,7 +158,7 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
     full_text = input_path.read_text(encoding="utf-8")
-    chunks = chunk_text(full_text, config.max_tokens, config.overlap, config.default_model)
+    chunks = chunk_text(full_text, config.max_tokens, config.overlap, config.chunk_encoding)
     kv_store = build_kv_store(chunks)
     save_kv_store(kv_store_path, kv_store)
 
@@ -174,7 +176,7 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
             pending_indices.append(index)
 
     if pending_indices:
-        client = OpenAI(api_key=config.openai_api_key)
+        client = create_deepseek_client(config)
         with ThreadPoolExecutor(max_workers=config.max_workers) as executor:
             futures = {
                 executor.submit(call_model, client, config.default_model, chunks[index], chunk_ids[index]): index

@@ -12,21 +12,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import argparse
 import json
-import os
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import faiss
 import networkx as nx
 import numpy as np
-from openai import OpenAI
-from tqdm import tqdm
-
-from config import THRAGConfig, get_config
-
-if "SSL_CERT_FILE" in os.environ:
-    os.environ.pop("SSL_CERT_FILE")
+from config import get_config
+from model_services import E5_DIMENSION, get_cpu_e5_encoder
 
 
 
@@ -64,18 +57,12 @@ class EdgeEmbedderFAISS:
         self,
         gexf_path: str,
         json_path: str,
-        embedding_model: str,
-        openai_api_key: str | None,
         index_path: str,
         payload_path: str,
-        client: OpenAI | None = None,
+        e5_model_path: str | None = None,
     ) -> None:
-        if not openai_api_key:
-            raise ValueError("OPENAI_API_KEY must be configured before building embeddings.")
-
         self.graph = nx.read_gexf(gexf_path)
-        self.embedding_model = embedding_model
-        self.client = client or OpenAI(api_key=openai_api_key)
+        self.encoder = get_cpu_e5_encoder(model_path=e5_model_path)
         self.index_path = str(index_path)
         self.payload_path = str(payload_path)
         self.sent2chunk = build_sent2chunk(json_path)
@@ -118,45 +105,24 @@ class EdgeEmbedderFAISS:
 
         return records
 
-    def _embed(self, text: str) -> np.ndarray:
-        response = self.client.embeddings.create(input=[text], model=self.embedding_model)
-        embedding = np.array(response.data[0].embedding, dtype="float32")
-        norm = np.linalg.norm(embedding)
-        return embedding if norm == 0 else embedding / norm
-
-    def build_index(self, max_workers: int = 4) -> None:
+    def build_index(self) -> None:
         if not self.edge_records:
             raise ValueError("No predicate-edge sentences were found in the graph.")
 
-        first_vector = self._embed(self.edge_records[0]["sentence"])
-        self.index = faiss.IndexFlatIP(len(first_vector))
-
-        vectors: list[np.ndarray] = [first_vector]
-        payloads: list[dict[str, Any]] = [self.edge_records[0]]
-
-        remaining = self.edge_records[1:]
-
-        def embed_record(record: dict[str, Any]) -> tuple[np.ndarray, dict[str, Any]]:
-            return self._embed(record["sentence"]), record
-
-        if remaining:
-            worker_count = max(1, max_workers)
-            with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                for vector, payload in tqdm(
-                    executor.map(embed_record, remaining),
-                    total=len(remaining),
-                    desc="Embedding predicate edges",
-                ):
-                    vectors.append(vector)
-                    payloads.append(payload)
-
-        self.index.add(np.vstack(vectors))
-        self.payloads = payloads
+        vectors = self.encoder.encode_passages(
+            [record["sentence"] for record in self.edge_records],
+            show_progress=True,
+        )
+        self.index = faiss.IndexFlatIP(E5_DIMENSION)
+        self.index.add(vectors)
+        self.payloads = list(self.edge_records)
         faiss.write_index(self.index, self.index_path)
         np.save(self.payload_path, np.array(self.payloads, dtype=object))
 
     def load_index(self) -> None:
         self.index = faiss.read_index(self.index_path)
+        if self.index.d != E5_DIMENSION:
+            raise ValueError("Existing index is not 768-dimensional E5. Rebuild edge embeddings first.")
         self.payloads = np.load(self.payload_path, allow_pickle=True).tolist()
 
     def search(
@@ -178,7 +144,7 @@ class EdgeEmbedderFAISS:
         if search_k == 0:
             return []
 
-        query_vector = self._embed(query).reshape(1, -1)
+        query_vector = self.encoder.encode_queries([query])
         distances, indices = self.index.search(query_vector, search_k)
 
         results: list[dict[str, Any]] = []
@@ -223,14 +189,13 @@ def build_index_for_dataset(dataset_name: str, rebuild: bool = False) -> str:
     embedder = EdgeEmbedderFAISS(
         gexf_path=str(graph_path),
         json_path=str(graph_json_path),
-        embedding_model=config.embed_model,
-        openai_api_key=config.openai_api_key,
         index_path=str(config.get_edge_index_file()),
         payload_path=str(config.get_edge_payload_file()),
+        e5_model_path=config.e5_model_path,
     )
 
     if rebuild or not config.get_edge_index_file().exists() or not config.get_edge_payload_file().exists():
-        embedder.build_index(max_workers=config.max_workers)
+        embedder.build_index()
         config.mark_step_completed(
             "edge_embedding",
             index_file=str(config.get_edge_index_file()),

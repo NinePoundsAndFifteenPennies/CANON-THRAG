@@ -32,16 +32,20 @@ def test_config() -> None:
 
     print("API settings")
     print("-" * 60)
-    if config.openai_api_key:
-        masked_key = f"{'*' * 8}{config.openai_api_key[-4:]}" if len(config.openai_api_key) >= 4 else "configured"
-        print(f"OPENAI_API_KEY: {masked_key}")
+    if config.deepseek_api_key and not config.deepseek_api_key.startswith("your_"):
+        print("DEEPSEEK_API_KEY: configured")
     else:
-        print("OPENAI_API_KEY: missing")
+        print("DEEPSEEK_API_KEY: missing or placeholder")
+    print(f"DEEPSEEK_BASE_URL: {config.deepseek_base_url}")
+    print(f"DEEPSEEK_THINKING: {config.deepseek_thinking}")
 
     print("\nModel settings")
     print("-" * 60)
     print(f"DEFAULT_MODEL: {config.default_model}")
-    print(f"EMBED_MODEL: {config.embed_model}")
+    print(f"E5_MODEL_PATH: {config.e5_model_path}")
+    print("E5 device: cpu")
+    print(f"E5_MAX_LENGTH / E5_BATCH_SIZE: {config.e5_max_length} / {config.e5_batch_size}")
+    print(f"CHUNK_ENCODING: {config.chunk_encoding}")
     print(f"CHAT_MODEL: {config.chat_model}")
     print(f"EVAL_MODEL: {config.eval_model}")
 
@@ -55,9 +59,14 @@ def test_config() -> None:
     print("\nEnvironment variables")
     print("-" * 60)
     for name in [
-        "OPENAI_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "DEEPSEEK_BASE_URL",
+        "DEEPSEEK_THINKING",
         "DEFAULT_MODEL",
-        "EMBED_MODEL",
+        "E5_MODEL_PATH",
+        "E5_MAX_LENGTH",
+        "E5_BATCH_SIZE",
+        "CHUNK_ENCODING",
         "CHAT_MODEL",
         "EVAL_MODEL",
         "TOP_K1",
@@ -69,7 +78,7 @@ def test_config() -> None:
         if not value:
             print(f"{name}: missing")
         elif "API_KEY" in name:
-            print(f"{name}: {'*' * 8}{value[-4:]}")
+            print(f"{name}: {'placeholder' if value.startswith('your_') else 'configured'}")
         else:
             print(f"{name}: {value}")
 
@@ -80,7 +89,7 @@ def create_sample_env() -> None:
     if not template.exists():
         raise FileNotFoundError(".env.example is missing.")
     Path(".env").write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
-    print("Created .env from .env.example. Update OPENAI_API_KEY before running the pipeline.")
+    print("Created .env from .env.example. Update DEEPSEEK_API_KEY before running the pipeline.")
 
 
 if __name__ == "__main__":

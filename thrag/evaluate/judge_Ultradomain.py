@@ -19,10 +19,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
 from tqdm import tqdm
 
 from config import get_config
+from model_services import create_deepseek_client
 from prompt.evaluation import EVALUATION_PROMPT
 
 
@@ -110,8 +110,8 @@ def main(
     seed: int = 42,
 ) -> dict[str, Any]:
     config = get_config()
-    if not config.openai_api_key:
-        raise ValueError("OPENAI_API_KEY must be configured before pairwise evaluation can run.")
+    if not config.deepseek_api_key:
+        raise ValueError("DEEPSEEK_API_KEY must be configured before pairwise evaluation can run.")
 
     path_a = Path(answer_a_path)
     path_b = Path(answer_b_path)
@@ -130,7 +130,7 @@ def main(
     random.shuffle(shuffled_indices)
     label_a_first = set(shuffled_indices[: len(shared_queries) // 2])
 
-    client = OpenAI(api_key=config.openai_api_key)
+    client = create_deepseek_client(config)
 
     def judge_one(index: int, query: str) -> tuple[int, dict[str, Any]]:
         answer_a = predictions_a[query]["result"]
@@ -148,6 +148,7 @@ def main(
             model=config.eval_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=config.eval_temperature,
+            extra_body=config.deepseek_extra_body(),
         )
         raw_content = (response.choices[0].message.content or "").strip()
 

@@ -32,12 +32,25 @@ class THRAGConfig:
         self._ensure_directories()
 
     def _load_environment(self) -> None:
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        self.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+        self.deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
+        self.deepseek_thinking = os.getenv("DEEPSEEK_THINKING", "disabled").strip().lower()
+        if self.deepseek_thinking not in {"enabled", "disabled"}:
+            raise ValueError("DEEPSEEK_THINKING must be enabled or disabled.")
 
-        self.default_model = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
-        self.embed_model = os.getenv("EMBED_MODEL", "text-embedding-3-small")
-        self.chat_model = os.getenv("CHAT_MODEL", "gpt-4o-mini")
-        self.eval_model = os.getenv("EVAL_MODEL", "gpt-4o-mini")
+        self.default_model = os.getenv("DEFAULT_MODEL", "deepseek-flash")
+        self.chat_model = os.getenv("CHAT_MODEL", "deepseek-flash")
+        self.eval_model = os.getenv("EVAL_MODEL", "deepseek-flash")
+
+        # Document chunking is independent of the API model and E5 WordPiece tokenizer.
+        self.chunk_encoding = os.getenv("CHUNK_ENCODING", "o200k_base")
+        self.e5_model_path = os.getenv("E5_MODEL_PATH", "/data/panzheng/bearrag/models/e5-base-v2")
+        self.e5_batch_size = int(os.getenv("E5_BATCH_SIZE", "32"))
+        self.e5_max_length = int(os.getenv("E5_MAX_LENGTH", "512"))
+        if self.e5_batch_size < 1:
+            raise ValueError("E5_BATCH_SIZE must be positive.")
+        if not 1 <= self.e5_max_length <= 512:
+            raise ValueError("E5_MAX_LENGTH must be between 1 and 512.")
 
         self.temperature = float(os.getenv("TEMPERATURE", "0.5"))
         self.max_tokens_response = int(os.getenv("MAX_TOKENS_RESPONSE", "2000"))
@@ -74,6 +87,10 @@ class THRAGConfig:
         self.timeout_seconds = int(os.getenv("TIMEOUT_SECONDS", "30"))
         self.enable_cache = os.getenv("ENABLE_CACHE", "true").lower() == "true"
         self.cache_ttl = int(os.getenv("CACHE_TTL", "3600"))
+
+    def deepseek_extra_body(self) -> dict[str, Any]:
+        """Explicitly control the official API's default-on thinking mode."""
+        return {"thinking": {"type": self.deepseek_thinking}}
 
     def _ensure_directories(self) -> None:
         for path in [

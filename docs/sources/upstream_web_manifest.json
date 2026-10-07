@@ -4,7 +4,7 @@
   "branch_reference": "main",
   "commit_sha": "6543fc2a8f5aadecd3032352d7d31dcd5791ec73",
   "local_source_dir": "thrag/",
-  "local_snapshot_status": "downloaded; unmodified upstream code",
+  "local_snapshot_status": "modified: official DeepSeek chat API and offline CPU E5 embeddings; upstream commit retained as source origin",
   "evidence_kind": "local source snapshot cloned from official repository",
   "read_sources": [
     "https://raw.githubusercontent.com/Tiabet/TH-RAG/main/config.py",
@@ -23,5 +23,17 @@
     "complete chunk retrieval evaluator"
   ],
   "upstream_tracked_files": 42,
-  "available_data": "data/test_dataset: 2 QA and contexts_example.txt; contexts.txt missing"
+  "available_data": "data/test_dataset: 2 QA and contexts_example.txt; contexts.txt missing",
+  "runtime_backends": {
+    "llm": "deepseek-flash",
+    "llm_base_url": "https://api.deepseek.com",
+    "thinking_default": "disabled",
+    "embedding": "local e5-base-v2",
+    "embedding_path": "/data/panzheng/bearrag/models/e5-base-v2",
+    "embedding_device": "cpu",
+    "embedding_dimension": 768,
+    "embedding_max_length": 512,
+    "chunk_encoding": "o200k_base"
+  },
+  "runtime_configuration_date": "2026-10-07"
 }

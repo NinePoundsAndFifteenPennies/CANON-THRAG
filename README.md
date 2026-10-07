@@ -26,7 +26,7 @@ git push
 
 ## 配置与产物
 
-依赖与 pipeline 说明见 `thrag/README.md`。需要 API 时从 `thrag/.env.example` 创建本机的 `.env` 并填写密钥；实际模型、数据和复现协议由后续实验确定。
+依赖与 pipeline 说明见 `thrag/README.md`。当前配置为 DeepSeek 官方 API 加服务器本地 CPU E5；在独立服务器环境先安装 `thrag/requirements-cpu.txt`，再安装 `thrag/requirements.txt`。从 `thrag/.env.example` 创建服务器的 `.env` 并填写 `DEEPSEEK_API_KEY`；数据和复现协议待后续确定。
 
 Git 同步源码、文档、配置模板和小型示例数据。密钥、虚拟环境、下载数据、图/向量缓存及实验输出留在各运行机器；实验结论对应的小型指标与配置应另行整理成可提交文件。
 

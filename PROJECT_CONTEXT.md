@@ -1,6 +1,6 @@
 # CANON-THRAG 项目上下文与进度
 
-更新：2026-10-06（Asia/Shanghai）。本文件是唯一进度入口，只保留当前状态、已完成和下一步。
+更新：2026-10-07（Asia/Shanghai）。本文件是唯一进度入口，只保留当前状态、已完成和下一步。
 
 ## 项目与范围
 
@@ -17,6 +17,7 @@
 - 第一版目前用于验证方向，投稿充分性未证实。需证明结构约束优于简单 label-only 聚类，不能用模块数量或图压缩率代替贡献证据。
 - 进度记录统一到本文件，不另维护过程日志。
 - 核心代码与数据来源已核对：支持 TH-RAG 主流程、短答指标及长答 pairwise；chunk 检索指标、完整成本统计、外部基线和消融编排需补。配置与数据入口见资源审计。
+- 模型服务适配已完成：DeepSeek 官方 API、本地 CPU E5、query/passage 前缀、归一化768维向量、512-token截断与本地 WordPiece 加载；切块分词器已独立配置。
 
 ## 当前状态
 
@@ -26,13 +27,15 @@
 
 没有安装依赖、运行 baseline 或产生研究结果。本地编码，服务器运行且可能改代码，双方通过 GitHub 同步；本轮不配置服务器。上游仅有两条示例 QA 和 `contexts_example.txt`，缺 pipeline 要求的 `contexts.txt`；正式数据及 gold chunk 映射需另行准备。
 
-已确定：LLM 使用 DeepSeek 官方 V4.1 Flash，当前官方 API 名为 `deepseek-flash`、地址 `https://api.deepseek.com`；用户已有 key，密钥只放服务器环境配置。Embedding 建议复用服务器 `/data/panzheng/bearrag/models/e5-base-v2`，尚待确认模型文件、版本和运行环境，未实际接入。
+已确定并写入配置：LLM 使用 DeepSeek 官方 V4.1 Flash（`deepseek-flash`、`https://api.deepseek.com`），第一版显式关闭 thinking，可配置启用；密钥通过服务器 `DEEPSEEK_API_KEY` 提供。本地 E5 路径为 `/data/panzheng/bearrag/models/e5-base-v2`，固定CPU、仅本地加载、默认batch 32/最大512。文档切块使用独立 `CHUNK_ENCODING=o200k_base`，原 chunk/K 参数未调整。
 
-未定：embedding 最终配置、预算、首批数据和问题 IDs、论文忠实或公开代码协议。论文数据子集、gold supporting evidence→chunk 映射与检索评测脚本仍需确认。
+按用户要求未运行测试、模型或 API，也未准备数据。已提供 CPU-only PyTorch 依赖入口；没有在本地或服务器安装依赖，服务器文件与接口兼容性尚待实际运行确认。
+
+未定：预算、首批数据和问题 IDs、论文忠实或公开代码协议。论文数据子集、gold supporting evidence→chunk 映射与检索评测脚本仍需确认。
 
 ## 下一步
 
-1. 接入 DeepSeek，并把切块分词器与 API 模型名解耦；确认并接入本地 E5，分开 LLM 与 embedding 后端。准备数据转换、gold chunk 映射和评测/成本采集，固定协议后在服务器启动 TH-RAG baseline。
+1. 等用户开始数据准备，再补数据转换、gold chunk 映射和评测/成本采集，固定协议后在服务器验证模型服务并启动 TH-RAG baseline。
 2. 使用同一抽取缓存比较原版、仅规范化、仅预筛、完整核心，检查合并精度与不变量，报告质量和成本；成功后再补规模与外部基线实验。
 
 ## 按需阅读

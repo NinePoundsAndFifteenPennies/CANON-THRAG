@@ -18,9 +18,10 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-Install dependencies:
+Install CPU-only PyTorch first, then the runtime dependencies in this new environment:
 
 ```bash
+pip install -r requirements-cpu.txt
 pip install -r requirements.txt
 ```
 
@@ -30,7 +31,14 @@ Create the environment file:
 cp .env.example .env
 ```
 
-Set `OPENAI_API_KEY` in `.env` before running the pipeline.
+Set `DEEPSEEK_API_KEY` in `.env` before running the pipeline. The template uses
+the official `https://api.deepseek.com` endpoint and `deepseek-flash`.
+
+The first version explicitly disables thinking with `DEEPSEEK_THINKING=disabled`.
+E5 is loaded only from `E5_MODEL_PATH` on CPU; its local WordPiece tokenizer is
+loaded automatically. `E5_MAX_LENGTH=512` truncates long inputs, and normalized
+768-dimensional vectors use `query: ` / `passage: ` prefixes. Set
+`CHUNK_ENCODING` separately for document splitting; it is not E5's tokenizer.
 
 ## 2. Prepare a Dataset
 
@@ -155,7 +163,9 @@ pytest
 
 ### Missing API key
 
-If graph construction or evaluation fails immediately, confirm that `OPENAI_API_KEY` is set in `.env`.
+If graph construction or pairwise evaluation fails immediately, confirm that
+`DEEPSEEK_API_KEY` is set in `.env`. Local E5 indexing needs local model files,
+not an embedding API key.
 
 ### Missing dataset files
 

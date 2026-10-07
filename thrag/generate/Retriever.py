@@ -21,6 +21,7 @@ from config import get_config
 from index.edge_embedding import EdgeEmbedderFAISS
 from index.subtopic_choice import choose_subtopics_for_topic
 from index.topic_choice import choose_topics_from_graph
+from model_services import create_deepseek_client
 
 
 class Retriever:
@@ -34,24 +35,18 @@ class Retriever:
         kv_json_path: str,
         index_path: str,
         payload_path: str,
-        embedding_model: str,
-        openai_api_key: str | None,
+        e5_model_path: str,
         client: OpenAI | None = None,
         thread_workers: int | None = None,
     ) -> None:
-        if not openai_api_key:
-            raise ValueError("OPENAI_API_KEY must be configured before retrieval can run.")
-
         self.graph = nx.read_gexf(gexf_path)
-        self.client = client or OpenAI(api_key=openai_api_key)
+        self.client = client or create_deepseek_client()
         self.embedder = EdgeEmbedderFAISS(
             gexf_path=gexf_path,
             json_path=json_path,
-            embedding_model=embedding_model,
-            openai_api_key=openai_api_key,
             index_path=index_path,
             payload_path=payload_path,
-            client=self.client,
+            e5_model_path=e5_model_path,
         )
         self.embedder.load_index()
 

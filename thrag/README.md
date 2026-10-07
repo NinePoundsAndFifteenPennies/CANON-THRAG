@@ -10,6 +10,9 @@ This repository contains the end-to-end research pipeline used to:
 3. generate short-form and long-form answers, and
 4. evaluate model outputs.
 
+This workspace uses the official DeepSeek API for chat and a local CPU-only
+E5-base-v2 model for embeddings. See `.env.example` for the current settings.
+
 ## Repository Status
 
 The codebase has been cleaned for public release with these constraints:
@@ -22,12 +25,14 @@ The codebase has been cleaned for public release with these constraints:
 ## Requirements
 
 - Python 3.10+
-- An OpenAI API key exposed through `OPENAI_API_KEY`
+- A DeepSeek API key exposed through `DEEPSEEK_API_KEY`
+- Local E5-base-v2 weights and tokenizer files, configured with `E5_MODEL_PATH`
 - Platform support: Windows, Linux, and macOS through the Python CLI
 
 Install dependencies:
 
 ```bash
+pip install -r requirements-cpu.txt
 pip install -r requirements.txt
 ```
 
@@ -67,7 +72,8 @@ An example dataset is included at `data/test_dataset/`.
 cp .env.example .env
 ```
 
-2. Add your OpenAI API key to `.env`.
+2. Set `DEEPSEEK_API_KEY` in `.env`. The default official endpoint is
+   `https://api.deepseek.com`, and the model name is `deepseek-flash`.
 
 3. Validate the configuration.
 
@@ -88,6 +94,29 @@ python pipeline.py --dataset test_dataset
 ```
 
 ## Pipeline Stages
+
+### Model configuration
+
+- `DEFAULT_MODEL`, `CHAT_MODEL`, and `EVAL_MODEL` select the DeepSeek chat models.
+- `DEEPSEEK_THINKING=disabled` explicitly selects non-thinking mode for this
+  first version; set it to `enabled` if needed. Temperature is ignored by the
+  official API when thinking is enabled.
+- `E5_MODEL_PATH` defaults to `/data/panzheng/bearrag/models/e5-base-v2`.
+  Sentence-Transformers loads it with `device="cpu"` and `local_files_only=True`,
+  including the local BERT WordPiece tokenizer. No model download is attempted.
+- `E5_MAX_LENGTH=512` controls input truncation; `E5_BATCH_SIZE=32` controls CPU
+  encoding batches. Queries use `query: ` and evidence sentences use `passage: `.
+  All embeddings are normalized float32 vectors with 768 dimensions.
+- `CHUNK_ENCODING=o200k_base` controls document chunking and local token counts
+  separately from both the API model and E5 tokenizer. These counts are not
+  DeepSeek billing usage. Existing chunk-size and retrieval-budget defaults are
+  otherwise unchanged; paper experiment settings will be fixed separately.
+
+Use a fresh environment and install the CPU-only PyTorch requirement first.
+Previously generated embedding indexes must be rebuilt after changing the
+embedding model; a non-768-dimensional index is rejected when loaded.
+
+### Pipeline steps
 
 The unified pipeline exposes the following canonical steps:
 
