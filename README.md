@@ -22,11 +22,13 @@ git commit -m "Describe the change"
 git push
 ```
 
-两端同时修改时可各建分支；合并前检查差异，避免强制覆盖对方修改。服务器配置与实验启动另行安排。
+两端同时修改时可各建分支；合并前检查差异，避免强制覆盖对方修改。
 
 ## 配置与产物
 
 依赖与 pipeline 说明见 `thrag/README.md`。当前配置为 DeepSeek 官方 API 加服务器本地 CPU E5；在独立服务器环境先安装 `thrag/requirements-cpu.txt`，再安装 `thrag/requirements.txt`。从 `thrag/.env.example` 创建服务器的 `.env` 并填写 `DEEPSEEK_API_KEY`；数据和复现协议待后续确定。
+
+服务器运行数据位于 `/data/panzheng/canon-thrag/data/`，结果位于 `/data/panzheng/canon-thrag/results/`，由 `THRAG_STORAGE_ROOT` 统一指定；子目录与文件名见 `thrag/SETUP_GUIDE.md`。流程状态仍位于代码目录的 `thrag/temp/`。服务器已跑通两条问题的短答示例和 5 个 pytest 测试，正式论文 baseline 尚未开始。
 
 Git 同步源码、文档、配置模板和小型示例数据。密钥、虚拟环境、下载数据、图/向量缓存及实验输出留在各运行机器；实验结论对应的小型指标与配置应另行整理成可提交文件。
 

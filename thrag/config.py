@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +20,14 @@ class THRAGConfig:
         self.project_root = Path(__file__).resolve().parent
         self.dataset_name = dataset_name
 
-        self.data_dir = self.project_root / "data"
-        self.results_dir = self.project_root / "results"
+        default_storage_root = "/data/panzheng/canon-thrag" if sys.platform.startswith("linux") else "."
+        storage_root = Path(os.getenv("THRAG_STORAGE_ROOT", default_storage_root)).expanduser()
+        if not storage_root.is_absolute():
+            storage_root = self.project_root / storage_root
+        self.storage_root = storage_root.resolve()
+
+        self.data_dir = self.storage_root / "data"
+        self.results_dir = self.storage_root / "results"
         self.temp_dir = self.project_root / "temp"
 
         self.index_results_dir = self.results_dir / "index"

@@ -25,7 +25,9 @@
 
 临时下载包、校验文件与上游 Git 备份已清理。本机仅此仓库的 GitHub HTTPS 认证暂引用 `tmp/` 中的便携 CLI 与配置；切换认证后才能移除剩余工具。ChatGPT GitHub 连接已可读取本仓库。
 
-本地 `canon-thrag` 环境已安装依赖并通过 5 个测试；已用示例 `contexts.txt` 成功跑通 graph construction、GEXF、CPU E5/FAISS、短答案生成和 F1 评估，结果位于 `thrag/results/`。运行链路使用 `thrag/tokenizers/deepseek-v4.1-flash` 的官方 tokenizer 做切块和 evidence token 计数；E5 仍为本地 CPU。当前工作区的 `contexts.txt` 已不在目录中，上游仅有两条示例 QA 和 `contexts_example.txt`，正式数据及 gold chunk 映射需另行准备。
+服务器 `canon-thrag` 环境已安装依赖并通过 5 个 pytest 测试；已用示例 `contexts.txt` 成功跑通 graph construction、GEXF、CPU E5/FAISS、短答案生成和 F1 评估。一个 chunk、两条 QA，missing=0、F1=0.8333、accuracy=1.0、exact match=0.5；已查看 `thrag/results/` 和 `thrag/temp/` 中的产物快照。这是流程验证，正式数据及 gold chunk 映射尚未准备。
+
+服务器数据与结果配置为 `/data/panzheng/canon-thrag/data/` 和 `/data/panzheng/canon-thrag/results/`，由 `THRAG_STORAGE_ROOT` 统一设置，Linux 默认即该根目录；内部结构和文件名不变。状态文件保留在 `thrag/temp/pipeline_state.json`，tokenizer 与代码一同管理。外置路径、数据集扫描、产物复用及相对路径已通过本地隔离验证，离线重评 F1 与服务器结果一致。已有数据与产物需要在服务器按 `thrag/SETUP_GUIDE.md` 放入对应目录；本轮未连接服务器搬移文件。其他平台未设置存储根目录时使用本地 `thrag/`，相对路径按 `thrag/` 解析。
 
 已确定并写入配置：LLM 使用 DeepSeek 官方 V4.1 Flash（`deepseek-flash`、`https://api.deepseek.com`），第一版显式关闭 thinking，可配置启用；密钥通过服务器 `DEEPSEEK_API_KEY` 提供。本地 E5 路径为 `/data/panzheng/bearrag/models/e5-base-v2`，固定CPU、仅本地加载、默认batch 32/最大512。文档切块与raw context计数已改用项目附带的官方V4.1 tokenizer（约6MB，仅tokenizer文件，无模型权重），由 `DEEPSEEK_TOKENIZER_PATH` 指定；E5 WordPiece仅用于embedding。chunk/K数值未改，切块边界会随tokenizer改变，后续不能复用旧分块缓存。
 
@@ -34,7 +36,7 @@
 
 ## 下一步
 
-1. 等用户开始数据准备，再补数据转换、gold chunk 映射和评测/成本采集，固定协议后在服务器验证模型服务并启动 TH-RAG baseline。
+1. 在服务器完成数据与结果目录搬放并确认数据集与已有产物可见。等用户开始正式数据准备，再补数据转换、gold chunk 映射和评测/成本采集，固定协议后启动 TH-RAG baseline。
 2. 使用同一抽取缓存比较原版、仅规范化、仅预筛、完整核心，检查合并精度与不变量，报告质量和成本；成功后再补规模与外部基线实验。
 
 ## 按需阅读

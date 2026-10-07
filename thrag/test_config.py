@@ -30,7 +30,14 @@ def test_config() -> None:
         print(f"Failed to load configuration: {exc}")
         return
 
-    print("API settings")
+    print("Storage paths")
+    print("-" * 60)
+    print(f"THRAG_STORAGE_ROOT: {config.storage_root}")
+    print(f"Data: {config.data_dir}")
+    print(f"Results: {config.results_dir}")
+    print(f"Pipeline state: {config.get_pipeline_state_file()}")
+
+    print("\nAPI settings")
     print("-" * 60)
     if config.deepseek_api_key and not config.deepseek_api_key.startswith("your_"):
         print("DEEPSEEK_API_KEY: configured")
@@ -59,6 +66,7 @@ def test_config() -> None:
     print("\nEnvironment variables")
     print("-" * 60)
     for name in [
+        "THRAG_STORAGE_ROOT",
         "DEEPSEEK_API_KEY",
         "DEEPSEEK_BASE_URL",
         "DEEPSEEK_THINKING",

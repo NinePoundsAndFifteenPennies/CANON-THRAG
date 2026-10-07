@@ -1,6 +1,6 @@
 # TH-RAG Setup Guide
 
-This guide documents the public-release workflow for the TH-RAG codebase.
+This guide documents the server workflow for the CANON-THRAG code checkout.
 
 ## 1. Environment Setup
 
@@ -34,6 +34,19 @@ cp .env.example .env
 Set `DEEPSEEK_API_KEY` in `.env` before running the pipeline. The template uses
 the official `https://api.deepseek.com` endpoint and `deepseek-flash`.
 
+Server storage is configured with:
+
+```dotenv
+THRAG_STORAGE_ROOT=/data/panzheng/canon-thrag
+```
+
+This is also the Linux default when the variable is absent, including in an
+existing `.env`. Both `data/` and `results/` live below this root. Relative
+values resolve against `thrag/`, independent of the current working directory.
+Other platforms default to `thrag/` when the variable is absent; set
+`THRAG_STORAGE_ROOT=.` for local storage when using the server template there.
+`temp/pipeline_state.json` and the bundled tokenizer stay in `thrag/`.
+
 The first version explicitly disables thinking with `DEEPSEEK_THINKING=disabled`.
 E5 is loaded only from `E5_MODEL_PATH` on CPU; its local WordPiece tokenizer is
 loaded automatically. `E5_MAX_LENGTH=512` truncates long inputs, and normalized
@@ -46,13 +59,52 @@ when switching from the former OpenAI chunk tokenization.
 
 ## 2. Prepare a Dataset
 
-Create a dataset directory under `data/`:
+Runtime storage layout:
 
 ```text
-data/
-|-- my_dataset/
-|   |-- contexts.txt
-|   `-- qa.json
+/data/panzheng/canon-thrag/
+|-- data/
+|   `-- my_dataset/
+|       |-- contexts.txt
+|       `-- qa.json
+`-- results/
+    |-- index/
+    |-- generated/
+    |-- chunks/
+    `-- evaluated/
+```
+
+Existing runtime directories can be placed here before running the pipeline.
+From `CANON-THRAG/thrag/`, the following commands relocate the two directories
+when the target `data/` and `results/` do not yet exist. The checks stop this
+block before moving files if either target already exists. Stop any running
+pipeline while relocating its files.
+
+```bash
+(
+  set -e
+  test ! -e /data/panzheng/canon-thrag/data
+  test ! -e /data/panzheng/canon-thrag/results
+  mkdir -p /data/panzheng/canon-thrag
+  mv -T data /data/panzheng/canon-thrag/data
+  git restore -- data/test_dataset
+  mv -T results /data/panzheng/canon-thrag/results
+)
+```
+
+The repository keeps only the tracked example templates under
+`thrag/data/test_dataset/`; the runtime copies, full datasets and outputs live
+in external storage. `temp/pipeline_state.json` is bookkeeping; the runner
+checks files at the configured result paths when deciding which steps to skip.
+
+For a fresh example dataset:
+
+```bash
+mkdir -p /data/panzheng/canon-thrag/data/test_dataset
+cp -n data/test_dataset/qa.json /data/panzheng/canon-thrag/data/test_dataset/
+cp -n data/test_dataset/contexts_example.txt \
+  /data/panzheng/canon-thrag/data/test_dataset/contexts.txt
+python pipeline.py --dataset test_dataset --steps graph_build answer_generation_short evaluation
 ```
 
 `contexts.txt` should contain the source passages used for graph construction.
@@ -78,11 +130,11 @@ python pipeline.py --dataset my_dataset --steps graph_build
 
 This stage produces:
 
-- `results/index/my_dataset_graph.json`
-- `results/index/my_dataset_kv_store.json`
-- `results/index/my_dataset_graph.gexf`
-- `results/index/my_dataset_edge_index.faiss`
-- `results/index/my_dataset_edge_payloads.npy`
+- `/data/panzheng/canon-thrag/results/index/my_dataset_graph.json`
+- `/data/panzheng/canon-thrag/results/index/my_dataset_kv_store.json`
+- `/data/panzheng/canon-thrag/results/index/my_dataset_graph.gexf`
+- `/data/panzheng/canon-thrag/results/index/my_dataset_edge_index.faiss`
+- `/data/panzheng/canon-thrag/results/index/my_dataset_edge_payloads.npy`
 
 You can also run the graph-only wrapper directly:
 
@@ -110,17 +162,19 @@ Both outputs together:
 python pipeline.py --dataset my_dataset --steps answer_generation
 ```
 
-Artifacts are written to `results/generated/`, and chunk-usage logs are written to `results/chunks/`.
+Artifacts are written to `/data/panzheng/canon-thrag/results/generated/`, and
+chunk-usage logs to `/data/panzheng/canon-thrag/results/chunks/`.
 
 ## 5. Run F1 Evaluation
 
-The F1 evaluator compares the short-answer output against `data/<dataset>/qa.json`.
+The F1 evaluator compares the short-answer output against
+`/data/panzheng/canon-thrag/data/<dataset>/qa.json`.
 
 ```bash
 python pipeline.py --dataset my_dataset --steps evaluation
 ```
 
-The result is written to `results/evaluated/my_dataset_eval_f1.json`.
+The result is written to `/data/panzheng/canon-thrag/results/evaluated/my_dataset_eval_f1.json`.
 
 ## 6. Pairwise LLM Evaluation
 
@@ -128,14 +182,14 @@ To compare TH-RAG against another system:
 
 ```bash
 python evaluate/judge_Ultradomain.py \
-  --answer-a results/generated/my_dataset_answers_long.json \
+  --answer-a /data/panzheng/canon-thrag/results/generated/my_dataset_answers_long.json \
   --answer-b baseline_answers.json \
-  --output results/evaluated/my_dataset_pairwise.json \
+  --output /data/panzheng/canon-thrag/results/evaluated/my_dataset_pairwise.json \
   --label-a TH-RAG \
   --label-b Baseline
 ```
 
-Add `--plot results/evaluated/my_dataset_pairwise.png` to save a chart.
+Add `--plot /data/panzheng/canon-thrag/results/evaluated/my_dataset_pairwise.png` to save a chart.
 
 ## 7. Useful Commands
 
@@ -173,7 +227,10 @@ not an embedding API key.
 
 ### Missing dataset files
 
-The pipeline requires `data/<dataset>/contexts.txt` for graph building and `data/<dataset>/qa.json` for answer generation and evaluation.
+The pipeline requires `<THRAG_STORAGE_ROOT>/data/<dataset>/contexts.txt` for
+graph building and `<THRAG_STORAGE_ROOT>/data/<dataset>/qa.json` for answer
+generation and evaluation. `python test_config.py` displays the effective
+paths, and `python pipeline.py --list-datasets` lists datasets in that location.
 
 ### Existing outputs are reused
 

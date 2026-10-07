@@ -9,8 +9,10 @@
 - 许可证：Apache-2.0
 - 代码目录：[thrag/](../thrag/)
 - 入口：[pipeline.py](../thrag/pipeline.py)
-- 输入格式：`data/<dataset>/contexts.txt` 与 `data/<dataset>/qa.json`
-- 输出目录：`results/index/`、`results/generated/`、`results/chunks/`、`results/evaluated/`
+- 服务器存储根目录：`/data/panzheng/canon-thrag/`，配置项 `THRAG_STORAGE_ROOT`
+- 输入格式：`/data/panzheng/canon-thrag/data/<dataset>/contexts.txt` 与 `qa.json`
+- 输出目录：`/data/panzheng/canon-thrag/results/` 下的 `index/`、`generated/`、`chunks/`、`evaluated/`
+- 流程状态：代码目录内的 `thrag/temp/pipeline_state.json`
 
 代码覆盖：
 
@@ -60,7 +62,7 @@ OVERRETRIEVE_FACTOR = 5
 
 仓库提供短答案 F1 和 UltraDomain 风格 pairwise judge；没有已核实的 chunk Recall/F1、Recall@5、NDCG@5 pipeline，也没有 gold evidence→chunk 映射。
 
-## 本机运行环境
+## 服务器运行环境
 
 运行环境：
 
@@ -92,6 +94,9 @@ PIP_CONFIG_FILE=/dev/null python -m pip install --index-url https://pypi.org/sim
 LLM API: https://api.deepseek.com
 Chat model: deepseek-flash
 Thinking: disabled
+Storage root: /data/panzheng/canon-thrag
+Data: /data/panzheng/canon-thrag/data
+Results: /data/panzheng/canon-thrag/results
 Embedding model: /data/panzheng/bearrag/models/e5-base-v2
 Embedding device: CPU
 E5 batch / max length: 32 / 512
@@ -99,6 +104,8 @@ E5 dimension: 768
 ```
 
 密钥通过 `thrag/.env` 中的 `DEEPSEEK_API_KEY` 提供，不写入仓库。E5 仅从本地路径加载，不使用 embedding API。
+
+Linux 在未设置 `THRAG_STORAGE_ROOT` 时也使用上述存储根目录；其他平台未设置时使用 `thrag/`。相对路径以 `thrag/` 为基准解析，`THRAG_STORAGE_ROOT=.` 可用于本地目录。所有建图、检索、生成、F1 评测和数据集扫描均通过同一配置读取数据与结果路径。目录内结构与文件名固定，已有产物放入对应目录后可继续复用；搬放命令见 `thrag/SETUP_GUIDE.md`。模板数据仍在仓库的 `thrag/data/test_dataset/`。
 
 ## Tokenizer 与 embedding 协议
 
@@ -129,7 +136,7 @@ E5 使用本地 `intfloat/e5-base-v2` 权重：
 
 ## 已验证运行
 
-本机使用 `canon-thrag` 环境完成：
+服务器使用 `canon-thrag` 环境完成：
 
 ```bash
 cd thrag
@@ -151,7 +158,9 @@ Accuracy: 1.0
 Exact match: 0.5
 ```
 
-结果文件位于 `thrag/results/`，不构成论文复现实验结论。长答案文件未在该次运行中生成。
+该次验证的工作区产物快照位于 `thrag/results/` 和 `thrag/temp/`，包含两条有效答案、一个 chunk 和全部短答流程产物；没有长答案。服务器的运行数据与结果按上述存储配置定位。这是流程验证，不构成论文复现实验结论。
+
+外置存储配置已通过本地隔离验证：数据集发现、图与答案产物复用、F1 评测读写及相对路径解析正确。复用服务器的两条预测进行离线重评，F1 仍为 0.8333333333333333，missing=0；原始产物与状态文件保留。
 
 ## 运行入口与待补内容
 

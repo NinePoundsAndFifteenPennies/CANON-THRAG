@@ -44,7 +44,11 @@ pip install -e .[dev]
 
 ## Dataset Format
 
-Each dataset lives under `data/<dataset_name>/`.
+Each runtime dataset lives under `/data/panzheng/canon-thrag/data/<dataset_name>/`
+on the server. `THRAG_STORAGE_ROOT` selects the parent of `data/` and `results/`.
+Linux defaults to `/data/panzheng/canon-thrag`; other platforms default to the
+`thrag/` directory when the setting is absent. Relative values resolve against
+`thrag/`, so `THRAG_STORAGE_ROOT=.` uses repository-local storage.
 
 Required files:
 
@@ -62,7 +66,8 @@ Expected `qa.json` format:
 ]
 ```
 
-An example dataset is included at `data/test_dataset/`.
+The repository includes example templates at `data/test_dataset/`. Copy them
+to the runtime data directory before running the example.
 
 ## Quick Start
 
@@ -75,22 +80,33 @@ cp .env.example .env
 2. Set `DEEPSEEK_API_KEY` in `.env`. The default official endpoint is
    `https://api.deepseek.com`, and the model name is `deepseek-flash`.
 
-3. Validate the configuration.
+3. Prepare the example in the server storage directory. If the dataset already
+   exists there, use those files. See `SETUP_GUIDE.md` for relocating existing
+   runtime data and results.
+
+```bash
+mkdir -p /data/panzheng/canon-thrag/data/test_dataset
+cp -n data/test_dataset/qa.json /data/panzheng/canon-thrag/data/test_dataset/
+cp -n data/test_dataset/contexts_example.txt \
+  /data/panzheng/canon-thrag/data/test_dataset/contexts.txt
+```
+
+4. Validate the configuration and effective storage paths.
 
 ```bash
 python test_config.py
 ```
 
-4. List available datasets.
+5. List available datasets.
 
 ```bash
 python pipeline.py --list-datasets
 ```
 
-5. Run the full pipeline.
+6. Run the short-answer example.
 
 ```bash
-python pipeline.py --dataset test_dataset
+python pipeline.py --dataset test_dataset --steps graph_build answer_generation_short evaluation
 ```
 
 ## Pipeline Stages
@@ -150,13 +166,19 @@ python pipeline.py --dataset test_dataset --steps graph_build answer_generation_
 
 ## Output Layout
 
-Generated artifacts are written under `results/`.
+Server artifacts are written under `/data/panzheng/canon-thrag/results/`.
+The directory names and artifact filenames are:
 
-- `results/index/`: extracted graph JSON, KV store, GEXF graph, FAISS index, and payloads
-- `results/generated/`: model answers
-- `results/chunks/`: chunk usage logs for answer generation
-- `results/evaluated/`: evaluation summaries
-- `temp/`: pipeline state bookkeeping
+- `/data/panzheng/canon-thrag/results/index/`: extracted graph JSON, KV store, GEXF graph, FAISS index, and payloads
+- `/data/panzheng/canon-thrag/results/generated/`: model answers
+- `/data/panzheng/canon-thrag/results/chunks/`: chunk usage logs for answer generation
+- `/data/panzheng/canon-thrag/results/evaluated/`: evaluation summaries
+- `thrag/temp/`: pipeline state bookkeeping in the code checkout
+
+`THRAG_STORAGE_ROOT` affects only `data/` and `results/`. Pipeline state and the
+bundled DeepSeek tokenizer stay in the code checkout. Steps reuse the expected
+artifacts found under the configured result directory; file contents and
+filenames can be preserved when relocating existing artifacts.
 
 ## Pairwise Evaluation
 
@@ -164,12 +186,12 @@ For pairwise LLM-based comparison between two answer files, use the UltraDomain-
 
 ```bash
 python evaluate/judge_Ultradomain.py \
-  --answer-a results/generated/test_dataset_answers_long.json \
+  --answer-a /data/panzheng/canon-thrag/results/generated/test_dataset_answers_long.json \
   --answer-b other_system_answers.json \
-  --output results/evaluated/test_dataset_pairwise.json \
+  --output /data/panzheng/canon-thrag/results/evaluated/test_dataset_pairwise.json \
   --label-a TH-RAG \
   --label-b Baseline \
-  --plot results/evaluated/test_dataset_pairwise.png
+  --plot /data/panzheng/canon-thrag/results/evaluated/test_dataset_pairwise.png
 ```
 
 ## Windows Helper

@@ -195,7 +195,7 @@ def list_datasets() -> None:
     evaluated = set(config.list_evaluated_datasets())
 
     if not available:
-        print("No datasets found under data/. Add data/<dataset>/contexts.txt to begin.")
+        print(f"No datasets found under {config.data_dir}. Add <dataset>/contexts.txt there to begin.")
         return
 
     print("Available datasets")
@@ -215,7 +215,7 @@ def list_datasets() -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the TH-RAG pipeline.")
-    parser.add_argument("--dataset", help="Dataset name under data/<dataset>/")
+    parser.add_argument("--dataset", help="Dataset name under the configured data directory")
     parser.add_argument(
         "--steps",
         nargs="+",
@@ -233,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--list-datasets",
         action="store_true",
-        help="List datasets that contain contexts.txt under data/.",
+        help="List datasets that contain contexts.txt under the configured data directory.",
     )
     return parser
 
