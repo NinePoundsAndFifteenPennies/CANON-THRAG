@@ -1,0 +1,20 @@
+{
+  "source": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+  "revision": "2cba9e42aa026125f3ed06c6d98c1db82f7ca027",
+  "imported_date": "2026-10-07",
+  "files": {
+    "tokenizer.json": {
+      "bytes": 6367257,
+      "sha256": "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b"
+    },
+    "tokenizer_config.json": {
+      "bytes": 801,
+      "sha256": "6ac8c8dc065ed118161d02dd532749ae3f52c243deac27872134fae2f50d8547"
+    },
+    "LICENSE": {
+      "bytes": 1084,
+      "sha256": "f2c6c602815669d292889e5be8c802f2ed950653b77999b1584e8e6aed25d040"
+    }
+  },
+  "scope": "raw-text tokenizer only; no model weights; API usage remains authoritative"
+}

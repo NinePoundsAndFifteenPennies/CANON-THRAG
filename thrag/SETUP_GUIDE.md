@@ -38,7 +38,11 @@ The first version explicitly disables thinking with `DEEPSEEK_THINKING=disabled`
 E5 is loaded only from `E5_MODEL_PATH` on CPU; its local WordPiece tokenizer is
 loaded automatically. `E5_MAX_LENGTH=512` truncates long inputs, and normalized
 768-dimensional vectors use `query: ` / `passage: ` prefixes. Set
-`CHUNK_ENCODING` separately for document splitting; it is not E5's tokenizer.
+`DEEPSEEK_TOKENIZER_PATH` separately for the bundled official chat tokenizer.
+Document splitting and raw context counts use DeepSeek tokenization; E5
+WordPiece only processes inputs to the embedding model. API usage remains the
+source of truth for complete request token totals. Rebuild cached artifacts
+when switching from the former OpenAI chunk tokenization.
 
 ## 2. Prepare a Dataset
 

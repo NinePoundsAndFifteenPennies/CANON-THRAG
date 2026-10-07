@@ -14,6 +14,63 @@ from config import THRAGConfig, get_config
 E5_DIMENSION = 768
 
 
+class DeepSeekTextTokenizer:
+    """Tokenize raw chat-model text using the bundled official V4.1 files."""
+
+    def __init__(self, tokenizer_path: str) -> None:
+        self.tokenizer_path = Path(tokenizer_path).expanduser().resolve()
+        self._tokenizer: Any = None
+        self._lock = threading.Lock()
+
+    def _load_tokenizer(self) -> None:
+        if self._tokenizer is not None:
+            return
+        for filename in ("tokenizer.json", "tokenizer_config.json"):
+            if not (self.tokenizer_path / filename).is_file():
+                raise FileNotFoundError(f"Missing DeepSeek tokenizer file: {self.tokenizer_path / filename}.")
+        from transformers import AutoTokenizer
+
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            str(self.tokenizer_path),
+            local_files_only=True,
+            trust_remote_code=False,
+            use_fast=True,
+        )
+
+    def encode(self, text: str) -> list[int]:
+        with self._lock:
+            self._load_tokenizer()
+            # Chunks contain source text only, without chat BOS/EOS or templates.
+            return self._tokenizer.encode(
+                text, add_special_tokens=False, truncation=False, verbose=False
+            )
+
+    def decode(self, token_ids: list[int]) -> str:
+        with self._lock:
+            self._load_tokenizer()
+            return self._tokenizer.decode(
+                token_ids,
+                skip_special_tokens=False,
+                clean_up_tokenization_spaces=False,
+            )
+
+    def count_text(self, text: str) -> int:
+        """Count raw text; API usage also includes message/template overhead."""
+        return len(self.encode(text))
+
+
+_CHAT_TOKENIZERS: dict[str, DeepSeekTextTokenizer] = {}
+_CHAT_TOKENIZERS_LOCK = threading.Lock()
+
+
+def get_deepseek_tokenizer(tokenizer_path: str | None = None) -> DeepSeekTextTokenizer:
+    path = str(Path(tokenizer_path or get_config().deepseek_tokenizer_path).expanduser().resolve())
+    with _CHAT_TOKENIZERS_LOCK:
+        if path not in _CHAT_TOKENIZERS:
+            _CHAT_TOKENIZERS[path] = DeepSeekTextTokenizer(path)
+        return _CHAT_TOKENIZERS[path]
+
+
 def create_deepseek_client(config: THRAGConfig | None = None) -> OpenAI:
     config = config or get_config()
     if not config.deepseek_api_key or config.deepseek_api_key.startswith("your_"):

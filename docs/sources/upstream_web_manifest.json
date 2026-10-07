@@ -33,7 +33,9 @@
     "embedding_device": "cpu",
     "embedding_dimension": 768,
     "embedding_max_length": 512,
-    "chunk_encoding": "o200k_base"
+    "chat_tokenizer": "official DeepSeek-V4.1-Flash BPE, bundled local files",
+    "chat_tokenizer_revision": "2cba9e42aa026125f3ed06c6d98c1db82f7ca027",
+    "chat_tokenizer_path": "thrag/tokenizers/deepseek-v4.1-flash"
   },
   "runtime_configuration_date": "2026-10-07"
 }

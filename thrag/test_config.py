@@ -45,7 +45,7 @@ def test_config() -> None:
     print(f"E5_MODEL_PATH: {config.e5_model_path}")
     print("E5 device: cpu")
     print(f"E5_MAX_LENGTH / E5_BATCH_SIZE: {config.e5_max_length} / {config.e5_batch_size}")
-    print(f"CHUNK_ENCODING: {config.chunk_encoding}")
+    print(f"DEEPSEEK_TOKENIZER_PATH: {config.deepseek_tokenizer_path}")
     print(f"CHAT_MODEL: {config.chat_model}")
     print(f"EVAL_MODEL: {config.eval_model}")
 
@@ -66,7 +66,7 @@ def test_config() -> None:
         "E5_MODEL_PATH",
         "E5_MAX_LENGTH",
         "E5_BATCH_SIZE",
-        "CHUNK_ENCODING",
+        "DEEPSEEK_TOKENIZER_PATH",
         "CHAT_MODEL",
         "EVAL_MODEL",
         "TOP_K1",

@@ -20,26 +20,25 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-import tiktoken
 from openai import OpenAI
 from tqdm import tqdm
 
 from config import THRAGConfig, get_config
-from model_services import create_deepseek_client
+from model_services import create_deepseek_client, get_deepseek_tokenizer
 from prompt.extract_graph import EXTRACTION_PROMPT
 
 
-def chunk_text(text: str, max_tokens: int, overlap: int, encoding_name: str) -> list[str]:
+def chunk_text(text: str, max_tokens: int, overlap: int, tokenizer_path: str) -> list[str]:
     """Split text into overlapping token windows."""
 
-    encoding = tiktoken.get_encoding(encoding_name)
-    tokens = encoding.encode(text)
+    tokenizer = get_deepseek_tokenizer(tokenizer_path)
+    tokens = tokenizer.encode(text)
 
     chunks: list[str] = []
     start = 0
     while start < len(tokens):
         end = min(start + max_tokens, len(tokens))
-        chunks.append(encoding.decode(tokens[start:end]))
+        chunks.append(tokenizer.decode(tokens[start:end]))
         if end >= len(tokens):
             break
         start = max(0, end - overlap)
@@ -158,7 +157,7 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
     full_text = input_path.read_text(encoding="utf-8")
-    chunks = chunk_text(full_text, config.max_tokens, config.overlap, config.chunk_encoding)
+    chunks = chunk_text(full_text, config.max_tokens, config.overlap, config.deepseek_tokenizer_path)
     kv_store = build_kv_store(chunks)
     save_kv_store(kv_store_path, kv_store)
 

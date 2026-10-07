@@ -42,8 +42,11 @@ class THRAGConfig:
         self.chat_model = os.getenv("CHAT_MODEL", "deepseek-flash")
         self.eval_model = os.getenv("EVAL_MODEL", "deepseek-flash")
 
-        # Document chunking is independent of the API model and E5 WordPiece tokenizer.
-        self.chunk_encoding = os.getenv("CHUNK_ENCODING", "o200k_base")
+        # The chat tokenizer and E5 WordPiece tokenizer serve different models.
+        tokenizer_path = Path(os.getenv("DEEPSEEK_TOKENIZER_PATH", "tokenizers/deepseek-v4.1-flash")).expanduser()
+        if not tokenizer_path.is_absolute():
+            tokenizer_path = self.project_root / tokenizer_path
+        self.deepseek_tokenizer_path = str(tokenizer_path.resolve())
         self.e5_model_path = os.getenv("E5_MODEL_PATH", "/data/panzheng/bearrag/models/e5-base-v2")
         self.e5_batch_size = int(os.getenv("E5_BATCH_SIZE", "32"))
         self.e5_max_length = int(os.getenv("E5_MAX_LENGTH", "512"))

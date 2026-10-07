@@ -107,10 +107,16 @@ python pipeline.py --dataset test_dataset
 - `E5_MAX_LENGTH=512` controls input truncation; `E5_BATCH_SIZE=32` controls CPU
   encoding batches. Queries use `query: ` and evidence sentences use `passage: `.
   All embeddings are normalized float32 vectors with 768 dimensions.
-- `CHUNK_ENCODING=o200k_base` controls document chunking and local token counts
-  separately from both the API model and E5 tokenizer. These counts are not
-  DeepSeek billing usage. Existing chunk-size and retrieval-budget defaults are
-  otherwise unchanged; paper experiment settings will be fixed separately.
+- `DEEPSEEK_TOKENIZER_PATH` selects the bundled official V4.1 Flash tokenizer
+  for document chunking and raw context token counts. It loads locally with
+  AutoTokenizer and is separate from E5 WordPiece. API usage includes message
+  formatting and is authoritative for request totals and billing.
+
+Only tokenizer files (about 6 MB) and their license are bundled, not DeepSeek
+weights. Their fixed source revision and hashes are recorded in
+`tokenizers/deepseek-v4.1-flash/SOURCE.json`. Changing from the old OpenAI
+tokenization changes chunk boundaries; rebuild graph/embedding/answer caches
+when preparing data. Chunk-size and retrieval-budget numbers are unchanged.
 
 Use a fresh environment and install the CPU-only PyTorch requirement first.
 Previously generated embedding indexes must be rebuilt after changing the

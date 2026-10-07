@@ -60,7 +60,7 @@ README 的默认 evaluation 步骤是答案 F1-style 评测，并展示 UltraDom
 - 当前 LLM 使用 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_BASE_URL`，通过统一 `create_deepseek_client` 初始化。E5 在本地 CPU 编码，不需要 embedding API key，也不复用 LLM 客户端。旧 `OPENAI_API_KEY/EMBED_MODEL` 配置已替换。
 - `DEFAULT_MODEL`：三元组抽取及 Topic/Subtopic 选择；`CHAT_MODEL`：最终回答；`EVAL_MODEL`：后续长答案 pairwise judge；三者默认均为 `deepseek-flash`。`E5_MODEL_PATH/E5_BATCH_SIZE/E5_MAX_LENGTH` 控制本地 embedding。答案 F1/Accuracy 计算不调用 judge API。
 - 自定义服务需兼容 `chat.completions`、相应 `response_format` 与 embeddings 接口。路由要求 `json_object`；抽取请求 `text` 并自行解析 JSON。
-- 原版按 API 模型名查 tiktoken 的问题已修正：文档分块与本地 context token 计数使用独立 `CHUNK_ENCODING`，默认 `o200k_base`。E5 的 BERT WordPiece 分词器由 Sentence-Transformers 从模型目录加载，用于E5的512-token输入限制；不参与文档chunk预算。DeepSeek真实usage以API返回为准。
+- 原版tiktoken用于按GPT聊天模型规则切块和计数，embedding分词由原OpenAI embedding API内部处理。当前文档切块与本地raw context计数已改为官方V4.1 Flash tokenizer，通过 `DEEPSEEK_TOKENIZER_PATH` 离线加载；E5 WordPiece只处理embedding的问题/证据与512-token输入限制。发送API的消息在服务端使用DeepSeek分词，完整用量以返回usage为准。
 - 论文主参数应显式设 `MAX_TOKENS=1200`、`OVERLAP=100`、`TOP_K1=30`、`TOP_K2=5`、Topic 5–10、Subtopic 10–25；若跑长答案，另确认 `TOP_K1_LONG/TOP_K2_LONG`，不能让其默认 25/5 混入主协议。`ANSWER_TEMPERATURE=0` 可固定路由/长答随机性，但论文只明确回答温度 0，路由设置应记录为本次配置。
 - 并发先小后大，例如 `MAX_WORKERS=2` 起步，依据服务限流和内存实测调整。问题批处理与每题 Subtopic 选择都有线程池；各问题工作线程创建各自的 GraphRAG/图/索引，会放大并发和内存。
 - `ALT_MAX_TOKENS/ALT_OVERLAP`、`TEMPERATURE`、`MAX_CONTEXT_LENGTH`、`BATCH_SIZE`、`TIMEOUT_SECONDS`、`ENABLE_CACHE/CACHE_TTL` 当前仅解析、未接入相应主逻辑，不能靠修改它们期待限制上下文、超时或自动缓存失效。
@@ -99,7 +99,9 @@ TH-RAG 作者随机抽取的两个 1000-QA 子集未在固定源码中附带，�
 
 本地embedding已独立为 `CpuE5Encoder`，默认路径 `/data/panzheng/bearrag/models/e5-base-v2`。通过 `SentenceTransformer(..., device="cpu", local_files_only=True)` 延迟加载，进程内共享模型并串行CPU编码；不尝试下载权重或调用embedding API。模型目录、版本与文件完整性尚未连接服务器核验。
 
-文档切块编码默认固定为 `o200k_base`，与原默认GPT-4o-mini的映射一致，已与DeepSeek模型名解耦。该编码定义本地分块协议和近似计数，不能当成DeepSeek账单；原chunk size/overlap与K值本轮未调整。E5自带WordPiece和API内部tokenizer分别承担各自的输入处理。
+此前保留 `o200k_base` 是沿用原OpenAI分块协议的选择，不等于DeepSeek真实tokenizer。按用户明确的模型对应关系，已改为官方 `deepseek-ai/DeepSeek-V4.1-Flash` tokenizer，固定revision `2cba9e42aa026125f3ed06c6d98c1db82f7ca027`。项目只附带约6MB的JSON词表、配置、许可证与来源hash，未下载DeepSeek权重；`AutoTokenizer`本地加载，raw encode不加BOS/EOS，也不套chat模板。原chunk size/overlap和K数值未调整，但边界改变，数据阶段需重建旧抽取/图/向量/答案缓存并统一协议。
+
+用户表中的归属正确：抽取chunk、层次候选列表及回答消息均由DeepSeek处理；证据句和检索问题的向量编码由E5处理。当前离线计数仍只统计证据context字符串，不是完整请求；API消息序列化和模板额外token应以usage为准。[官方离线tokenizer及usage说明](https://api-docs.deepseek.com/quick_start/token_usage/)。没有用E5 WordPiece估算DeepSeek消耗，也没有通过tokenizer加载DeepSeek模型本体。
 
 当前实现按标准 [intfloat/e5-base-v2 模型卡](https://huggingface.co/intfloat/e5-base-v2) 处理英语检索：问题加 `query: `，证据加 `passage: `，`encode(normalize_embeddings=True)` 后转为float32，并检查768维。模型 `max_seq_length` 默认512，超长输入由本地WordPiece截断。用 `requirements-cpu.txt` 从官方CPU wheel源安装PyTorch，再装其余依赖；不要求GPU/CUDA。本轮没有安装任何包或运行模型。
 

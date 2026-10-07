@@ -15,10 +15,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-import tiktoken
 from config import get_config
 from generate.Retriever import Retriever
-from model_services import create_deepseek_client
+from model_services import create_deepseek_client, get_deepseek_tokenizer
 
 
 class GraphRAG:
@@ -83,9 +82,8 @@ class GraphRAG:
         return "\n\n".join(sections)
 
     def _count_tokens(self, text: str) -> int:
-        # This is the fixed experiment encoding, not DeepSeek's billing tokenizer.
-        encoding = tiktoken.get_encoding(self.config.chunk_encoding)
-        return len(encoding.encode(text, disallowed_special=()))
+        # Evidence text only; full request usage is reported by the DeepSeek API.
+        return get_deepseek_tokenizer(self.config.deepseek_tokenizer_path).count_text(text)
 
     def answer(
         self,

@@ -17,7 +17,7 @@
 - 第一版目前用于验证方向，投稿充分性未证实。需证明结构约束优于简单 label-only 聚类，不能用模块数量或图压缩率代替贡献证据。
 - 进度记录统一到本文件，不另维护过程日志。
 - 核心代码与数据来源已核对：支持 TH-RAG 主流程、短答指标及长答 pairwise；chunk 检索指标、完整成本统计、外部基线和消融编排需补。配置与数据入口见资源审计。
-- 模型服务适配已完成：DeepSeek 官方 API、本地 CPU E5、query/passage 前缀、归一化768维向量、512-token截断与本地 WordPiece 加载；切块分词器已独立配置。
+- 模型服务适配已完成：DeepSeek 官方 API与官方V4.1文本tokenizer、本地CPU E5及独立WordPiece；query/passage前缀、归一化768维向量与512-token截断。
 
 ## 当前状态
 
@@ -27,7 +27,7 @@
 
 没有安装依赖、运行 baseline 或产生研究结果。本地编码，服务器运行且可能改代码，双方通过 GitHub 同步；本轮不配置服务器。上游仅有两条示例 QA 和 `contexts_example.txt`，缺 pipeline 要求的 `contexts.txt`；正式数据及 gold chunk 映射需另行准备。
 
-已确定并写入配置：LLM 使用 DeepSeek 官方 V4.1 Flash（`deepseek-flash`、`https://api.deepseek.com`），第一版显式关闭 thinking，可配置启用；密钥通过服务器 `DEEPSEEK_API_KEY` 提供。本地 E5 路径为 `/data/panzheng/bearrag/models/e5-base-v2`，固定CPU、仅本地加载、默认batch 32/最大512。文档切块使用独立 `CHUNK_ENCODING=o200k_base`，原 chunk/K 参数未调整。
+已确定并写入配置：LLM 使用 DeepSeek 官方 V4.1 Flash（`deepseek-flash`、`https://api.deepseek.com`），第一版显式关闭 thinking，可配置启用；密钥通过服务器 `DEEPSEEK_API_KEY` 提供。本地 E5 路径为 `/data/panzheng/bearrag/models/e5-base-v2`，固定CPU、仅本地加载、默认batch 32/最大512。文档切块与raw context计数已改用项目附带的官方V4.1 tokenizer（约6MB，仅tokenizer文件，无模型权重），由 `DEEPSEEK_TOKENIZER_PATH` 指定；E5 WordPiece仅用于embedding。chunk/K数值未改，切块边界会随tokenizer改变，后续不能复用旧分块缓存。
 
 按用户要求未运行测试、模型或 API，也未准备数据。已提供 CPU-only PyTorch 依赖入口；没有在本地或服务器安装依赖，服务器文件与接口兼容性尚待实际运行确认。
 
