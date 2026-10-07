@@ -74,29 +74,6 @@ Runtime storage layout:
     `-- evaluated/
 ```
 
-Existing runtime directories can be placed here before running the pipeline.
-From `CANON-THRAG/thrag/`, the following commands relocate the two directories
-when the target `data/` and `results/` do not yet exist. The checks stop this
-block before moving files if either target already exists. Stop any running
-pipeline while relocating its files.
-
-```bash
-(
-  set -e
-  test ! -e /data/panzheng/canon-thrag/data
-  test ! -e /data/panzheng/canon-thrag/results
-  mkdir -p /data/panzheng/canon-thrag
-  mv -T data /data/panzheng/canon-thrag/data
-  git restore -- data/test_dataset
-  mv -T results /data/panzheng/canon-thrag/results
-)
-```
-
-The repository keeps only the tracked example templates under
-`thrag/data/test_dataset/`; the runtime copies, full datasets and outputs live
-in external storage. `temp/pipeline_state.json` is bookkeeping; the runner
-checks files at the configured result paths when deciding which steps to skip.
-
 For a fresh example dataset:
 
 ```bash

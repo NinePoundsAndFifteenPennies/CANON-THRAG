@@ -81,8 +81,7 @@ cp .env.example .env
    `https://api.deepseek.com`, and the model name is `deepseek-flash`.
 
 3. Prepare the example in the server storage directory. If the dataset already
-   exists there, use those files. See `SETUP_GUIDE.md` for relocating existing
-   runtime data and results.
+   exists there, use those files.
 
 ```bash
 mkdir -p /data/panzheng/canon-thrag/data/test_dataset
@@ -176,9 +175,7 @@ The directory names and artifact filenames are:
 - `thrag/temp/`: pipeline state bookkeeping in the code checkout
 
 `THRAG_STORAGE_ROOT` affects only `data/` and `results/`. Pipeline state and the
-bundled DeepSeek tokenizer stay in the code checkout. Steps reuse the expected
-artifacts found under the configured result directory; file contents and
-filenames can be preserved when relocating existing artifacts.
+bundled DeepSeek tokenizer stay in the code checkout.
 
 ## Pairwise Evaluation
 
