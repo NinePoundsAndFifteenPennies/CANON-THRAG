@@ -25,11 +25,10 @@
 
 临时下载包、校验文件与上游 Git 备份已清理。本机仅此仓库的 GitHub HTTPS 认证暂引用 `tmp/` 中的便携 CLI 与配置；切换认证后才能移除剩余工具。ChatGPT GitHub 连接已可读取本仓库。
 
-没有安装依赖、运行 baseline 或产生研究结果。本地编码，服务器运行且可能改代码，双方通过 GitHub 同步；本轮不配置服务器。上游仅有两条示例 QA 和 `contexts_example.txt`，缺 pipeline 要求的 `contexts.txt`；正式数据及 gold chunk 映射需另行准备。
+本地 `canon-thrag` 环境已安装依赖并通过 5 个测试；已用示例 `contexts.txt` 成功跑通 graph construction、GEXF、CPU E5/FAISS、短答案生成和 F1 评估，结果位于 `thrag/results/`。运行链路使用 `thrag/tokenizers/deepseek-v4.1-flash` 的官方 tokenizer 做切块和 evidence token 计数；E5 仍为本地 CPU。当前工作区的 `contexts.txt` 已不在目录中，上游仅有两条示例 QA 和 `contexts_example.txt`，正式数据及 gold chunk 映射需另行准备。
 
 已确定并写入配置：LLM 使用 DeepSeek 官方 V4.1 Flash（`deepseek-flash`、`https://api.deepseek.com`），第一版显式关闭 thinking，可配置启用；密钥通过服务器 `DEEPSEEK_API_KEY` 提供。本地 E5 路径为 `/data/panzheng/bearrag/models/e5-base-v2`，固定CPU、仅本地加载、默认batch 32/最大512。文档切块与raw context计数已改用项目附带的官方V4.1 tokenizer（约6MB，仅tokenizer文件，无模型权重），由 `DEEPSEEK_TOKENIZER_PATH` 指定；E5 WordPiece仅用于embedding。chunk/K数值未改，切块边界会随tokenizer改变，后续不能复用旧分块缓存。
 
-按用户要求未运行测试、模型或 API，也未准备数据。已提供 CPU-only PyTorch 依赖入口；没有在本地或服务器安装依赖，服务器文件与接口兼容性尚待实际运行确认。
 
 未定：预算、首批数据和问题 IDs、论文忠实或公开代码协议。论文数据子集、gold supporting evidence→chunk 映射与检索评测脚本仍需确认。
 
