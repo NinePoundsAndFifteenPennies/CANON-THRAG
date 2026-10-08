@@ -23,6 +23,23 @@ def test_parse_triples_response_accepts_top_level_list() -> None:
     assert triples[0]["triple"][2] == "FAISS"
 
 
+def test_parse_triples_response_accepts_json_object() -> None:
+    payload = json.dumps(
+        {
+            "triples": [
+                {
+                    "triple": ["TH-RAG", "uses", "FAISS"],
+                    "subject": {"subtopic": "System", "main_topic": "Research"},
+                    "object": {"subtopic": "Index", "main_topic": "Infrastructure"},
+                }
+            ]
+        }
+    )
+
+    triples = parse_triples_response(payload)
+    assert len(triples) == 1
+
+
 
 def test_convert_json_to_gexf_writes_graph(tmp_path) -> None:
     graph_json = tmp_path / "graph.json"

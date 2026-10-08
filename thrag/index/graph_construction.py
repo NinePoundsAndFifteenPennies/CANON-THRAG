@@ -110,18 +110,38 @@ def load_existing_blocks(output_path: Path) -> dict[str, dict[str, Any]]:
 
 def call_model(client: OpenAI, model_name: str, chunk_text_value: str, chunk_id: str) -> dict[str, Any]:
     prompt = EXTRACTION_PROMPT.replace("{{document}}", chunk_text_value.strip())
+    config = get_config()
     response = client.chat.completions.create(
         model=model_name,
         messages=[
-            {"role": "system", "content": "You extract factual triples from text and return valid JSON."},
+            {
+                "role": "system",
+                "content": (
+                    "You extract factual triples from text and return valid JSON. "
+                    "Return at most 20 non-redundant triples and always finish the JSON object."
+                ),
+            },
             {"role": "user", "content": prompt},
         ],
         temperature=0.0,
-        max_tokens=get_config().max_tokens_response,
-        response_format={"type": "text"},
-        extra_body=get_config().deepseek_extra_body(),
+        max_tokens=config.max_tokens_response,
+        response_format={"type": "json_object"},
+        extra_body=config.deepseek_extra_body(),
     )
-    content = response.choices[0].message.content or "[]"
+    if not response.choices:
+        raise ValueError(f"{chunk_id}: API response contained no choices")
+    choice = response.choices[0]
+    finish_reason = choice.finish_reason
+    if finish_reason == "length":
+        raise ValueError(
+            f"{chunk_id}: triple extraction response was truncated at "
+            f"MAX_TOKENS_RESPONSE={config.max_tokens_response}"
+        )
+    if finish_reason not in {None, "stop"}:
+        raise ValueError(f"{chunk_id}: triple extraction stopped with finish_reason={finish_reason!r}")
+    content = choice.message.content
+    if not content or not content.strip():
+        raise ValueError(f"{chunk_id}: triple extraction returned empty content")
     triples = parse_triples_response(content)
     return {
         "chunk_id": chunk_id,
@@ -169,35 +189,39 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
 
     for index, chunk_id in enumerate(chunk_ids):
         existing_block = existing_blocks.get(chunk_id)
-        if existing_block and isinstance(existing_block.get("triples"), list):
+        if (
+            existing_block
+            and "error" not in existing_block
+            and isinstance(existing_block.get("triples"), list)
+        ):
             ordered_blocks[index] = existing_block
         else:
             pending_indices.append(index)
 
     if pending_indices:
         client = create_deepseek_client(config)
-        with ThreadPoolExecutor(max_workers=config.max_workers) as executor:
-            futures = {
-                executor.submit(call_model, client, config.default_model, chunks[index], chunk_ids[index]): index
-                for index in pending_indices
-            }
+        executor = ThreadPoolExecutor(max_workers=config.max_workers)
+        futures = {
+            executor.submit(call_model, client, config.default_model, chunks[index], chunk_ids[index]): index
+            for index in pending_indices
+        }
+        try:
             for completed_count, future in enumerate(
                 tqdm(as_completed(futures), total=len(futures), desc="Extracting triples"),
                 start=1,
             ):
                 index = futures[future]
-                try:
-                    ordered_blocks[index] = future.result()
-                except Exception as exc:
-                    ordered_blocks[index] = {
-                        "chunk_id": chunk_ids[index],
-                        "content": chunks[index],
-                        "triples": [],
-                        "error": str(exc),
-                    }
+                ordered_blocks[index] = future.result()
 
                 if completed_count % 10 == 0 or completed_count == len(futures):
                     save_blocks(output_path, [block for block in ordered_blocks if block is not None])
+        except Exception:
+            for pending_future in futures:
+                pending_future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        else:
+            executor.shutdown(wait=True)
     else:
         save_blocks(output_path, [block for block in ordered_blocks if block is not None])
 
@@ -235,4 +259,3 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     main(dataset_name=args.dataset, force_rebuild=args.force)
-

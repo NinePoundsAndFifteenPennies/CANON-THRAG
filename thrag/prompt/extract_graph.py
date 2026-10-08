@@ -11,54 +11,62 @@ Instructions:
 4. For the subject and object of each triple, assign:
    - subtopic: a specific category
    - main_topic: a broader category
-5. Return only valid JSON.
+5. Extract at most 20 triples. Prefer the most important, explicit, non-redundant
+   relations for representing the document.
+6. Do not repeat the same fact with different wording. Omit weak, speculative,
+   trivial, or purely navigational statements.
+7. Return only valid JSON and finish the complete JSON object.
 
-Expected format:
-[
-  {
-    "triple": ["subject", "relation", "object"],
-    "sentence": "Supporting sentence from the document.",
-    "subject": {
-      "subtopic": "Specific category",
-      "main_topic": "Broader category"
-    },
-    "object": {
-      "subtopic": "Specific category",
-      "main_topic": "Broader category"
+Expected JSON format:
+{
+  "triples": [
+    {
+      "triple": ["subject", "relation", "object"],
+      "sentence": "Supporting sentence from the document.",
+      "subject": {
+        "subtopic": "Specific category",
+        "main_topic": "Broader category"
+      },
+      "object": {
+        "subtopic": "Specific category",
+        "main_topic": "Broader category"
+      }
     }
-  }
-]
+  ]
+}
 
 Example document:
 "Inez is an Estonian new media artist. She lives in Finland. She has composed electronic music."
 
-Example output:
-[
-  {
-    "triple": ["Inez", "is", "an Estonian new media artist"],
-    "sentence": "Inez is an Estonian new media artist.",
-    "subject": {
-      "subtopic": "New Media Artist",
-      "main_topic": "Art"
+Example JSON output:
+{
+  "triples": [
+    {
+      "triple": ["Inez", "is", "an Estonian new media artist"],
+      "sentence": "Inez is an Estonian new media artist.",
+      "subject": {
+        "subtopic": "New Media Artist",
+        "main_topic": "Art"
+      },
+      "object": {
+        "subtopic": "Nationality",
+        "main_topic": "Culture"
+      }
     },
-    "object": {
-      "subtopic": "Nationality",
-      "main_topic": "Culture"
+    {
+      "triple": ["Inez", "lives in", "Finland"],
+      "sentence": "She lives in Finland.",
+      "subject": {
+        "subtopic": "New Media Artist",
+        "main_topic": "Art"
+      },
+      "object": {
+        "subtopic": "Country",
+        "main_topic": "Geography"
+      }
     }
-  },
-  {
-    "triple": ["Inez", "lives in", "Finland"],
-    "sentence": "She lives in Finland.",
-    "subject": {
-      "subtopic": "New Media Artist",
-      "main_topic": "Art"
-    },
-    "object": {
-      "subtopic": "Country",
-      "main_topic": "Geography"
-    }
-  }
-]
+  ]
+}
 
 Input document:
 {{document}}
