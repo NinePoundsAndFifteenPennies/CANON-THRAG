@@ -17,7 +17,7 @@ from typing import Any
 
 from config import get_config
 from generate.Retriever import Retriever
-from model_services import create_deepseek_client, get_deepseek_tokenizer
+from model_services import create_chat_client, get_chat_tokenizer
 
 
 class GraphRAG:
@@ -43,7 +43,7 @@ class GraphRAG:
         self.temperature = temperature
         self.max_output_tokens = max_output_tokens
 
-        self.client = create_deepseek_client(self.config)
+        self.client = create_chat_client(self.config)
         self.chunk_map = self._load_chunk_map(self.config.get_kv_store_file())
         self.retriever = Retriever(
             gexf_path=str(self.config.get_graph_gexf_file()),
@@ -82,8 +82,8 @@ class GraphRAG:
         return "\n\n".join(sections)
 
     def _count_tokens(self, text: str) -> int:
-        # Evidence text only; full request usage is reported by the DeepSeek API.
-        return get_deepseek_tokenizer(self.config.deepseek_tokenizer_path).count_text(text)
+        # Evidence text only; full request usage is reported by the vLLM API.
+        return get_chat_tokenizer(self.config.chat_tokenizer_path).count_text(text)
 
     def answer(
         self,
@@ -124,7 +124,7 @@ class GraphRAG:
             ],
             temperature=self.temperature,
             max_tokens=self.max_output_tokens,
-            extra_body=self.config.deepseek_extra_body(),
+            extra_body=self.config.llm_extra_body(),
         )
         answer_text = (response.choices[0].message.content or "").strip()
         return answer_text, elapsed, self._count_tokens(context)

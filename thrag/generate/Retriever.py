@@ -21,7 +21,7 @@ from config import get_config
 from index.edge_embedding import EdgeEmbedderFAISS
 from index.subtopic_choice import choose_subtopics_for_topic
 from index.topic_choice import choose_topics_from_graph
-from model_services import create_deepseek_client
+from model_services import create_chat_client
 
 
 class Retriever:
@@ -40,7 +40,7 @@ class Retriever:
         thread_workers: int | None = None,
     ) -> None:
         self.graph = nx.read_gexf(gexf_path)
-        self.client = client or create_deepseek_client()
+        self.client = client or create_chat_client()
         self.embedder = EdgeEmbedderFAISS(
             gexf_path=gexf_path,
             json_path=json_path,

@@ -1,70 +1,83 @@
-# TH-RAG Setup Guide
+# TH-RAG server setup and operation
 
-This guide documents the server workflow for the CANON-THRAG code checkout.
+This document owns installation, credential entry, dataset layout, execution,
+and migration procedures. Parameter semantics are in the
+[configuration reference](../docs/config_reference.md); values come from
+[.env.example](.env.example). Actual completion and test results belong only in
+[PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md).
 
-## 1. Environment Setup
+Run the commands below in the server environment. Do not execute the project
+on the local machine without its dependencies.
 
-Create and activate a virtual environment:
+<a id="environment"></a>
+## 1. Prepare the environment and credentials
+
+Enter the server checkout; adjust the prefix if the repository is elsewhere:
+
+```bash
+cd /home/panzheng/projects/CANON-THRAG/thrag
+conda activate canon-thrag
+```
+
+If that environment does not exist, create a Python 3.10+ environment first.
+A standalone alternative is:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 ```
 
-Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-Install CPU-only PyTorch first, then the runtime dependencies in this new environment:
+For a new environment, install CPU PyTorch before the runtime dependencies:
 
 ```bash
 pip install -r requirements-cpu.txt
 pip install -r requirements.txt
 ```
 
-Create the environment file:
+If an inherited pip extra index interferes, use this server-specific fallback
+for the runtime dependencies, without changing global pip configuration:
 
 ```bash
-cp .env.example .env
+PIP_CONFIG_FILE=/dev/null python -m pip install --index-url https://pypi.org/simple -r requirements.txt
 ```
 
-Set `DEEPSEEK_API_KEY` in `.env` before running the pipeline. The template uses
-the official `https://api.deepseek.com` endpoint and `deepseek-flash`.
+Install optional development dependencies with `pip install -e .[dev]`.
 
-Server storage is configured with:
+Create the private environment file if absent:
 
-```dotenv
-THRAG_STORAGE_ROOT=/data/panzheng/canon-thrag
+```bash
+cp -n .env.example .env
 ```
 
-This is also the Linux default when the variable is absent, including in an
-existing `.env`. Both `data/` and `results/` live below this root. Relative
-values resolve against `thrag/`, independent of the current working directory.
-Other platforms default to `thrag/` when the variable is absent; set
-`THRAG_STORAGE_ROOT=.` for local storage when using the server template there.
-`temp/pipeline_state.json` and the bundled tokenizer stay in `thrag/`.
+Edit `.env` in this `thrag/` directory and replace the `LLM_API_KEY` placeholder
+with the real service key. For an existing file, update its model, endpoint,
+thinking, tokenizer, and generation fields from the latest template; preserve
+actual storage and E5 path overrides. Also update any previously exported
+settings; see [configuration loading](../docs/config_reference.md#loading).
+Never put the real key in the template or commit it.
 
-The first version explicitly disables thinking with `DEEPSEEK_THINKING=disabled`.
-E5 is loaded only from `E5_MODEL_PATH` on CPU; its local WordPiece tokenizer is
-loaded automatically. `E5_MAX_LENGTH=512` truncates long inputs, and normalized
-768-dimensional vectors use `query: ` / `passage: ` prefixes. Set
-`DEEPSEEK_TOKENIZER_PATH` separately for the bundled official chat tokenizer.
-Document splitting and raw context counts use DeepSeek tokenization; E5
-WordPiece only processes inputs to the embedding model. API usage remains the
-source of truth for complete request token totals. Rebuild cached artifacts
-when switching from the former OpenAI chunk tokenization.
+Sync the complete local tokenizer directory selected by the template. Its
+model weights remain on the inference server. The E5 model must already exist
+at its configured local path; [tokenizer and embedding requirements](../docs/config_reference.md#tokenization)
+are maintained separately.
 
-## 2. Prepare a Dataset
+Check the resolved paths and settings:
 
-Runtime storage layout:
+```bash
+python test_config.py
+```
+
+<a id="dataset"></a>
+## 2. Prepare input files
+
+`<storage_root>` below means the resolved `THRAG_STORAGE_ROOT` displayed by the
+configuration check. Use [data preparation scripts](../scripts/README.md) for
+benchmark-specific sampling, conversion, and metadata rules.
 
 ```text
-/data/panzheng/canon-thrag/
+<storage_root>/
 |-- data/
-|   `-- my_dataset/
+|   `-- <dataset>/
 |       |-- contexts.txt
 |       `-- qa.json
 `-- results/
@@ -74,145 +87,113 @@ Runtime storage layout:
     `-- evaluated/
 ```
 
-For a fresh example dataset:
-
-```bash
-mkdir -p /data/panzheng/canon-thrag/data/test_dataset
-cp -n data/test_dataset/qa.json /data/panzheng/canon-thrag/data/test_dataset/
-cp -n data/test_dataset/contexts_example.txt \
-  /data/panzheng/canon-thrag/data/test_dataset/contexts.txt
-python pipeline.py --dataset test_dataset --steps graph_build answer_generation_short evaluation
-```
-
-`contexts.txt` should contain the source passages used for graph construction.
-
-`qa.json` should contain question-answer pairs in this format:
+`contexts.txt` is UTF-8 source text. `qa.json` is a JSON array with `query` and
+`answer` fields:
 
 ```json
 [
-  {
-    "query": "Which component builds the graph?",
-    "answer": "Graph construction"
-  }
+  {"query": "Which component builds the graph?", "answer": "Graph construction"}
 ]
 ```
 
-## 3. Build Graph Artifacts
+Graph building requires the text file; answering and F1 evaluation require the
+QA file. For a minimal example, copy `qa.json` and `contexts_example.txt` from
+[data/test_dataset/](data/test_dataset/) into the runtime dataset directory,
+renaming the latter to `contexts.txt`. Do not overwrite an existing benchmark
+dataset with these examples.
 
-Run the graph-building subset of the pipeline:
+<a id="run"></a>
+## 3. Run the pipeline
 
-```bash
-python pipeline.py --dataset my_dataset --steps graph_build
-```
-
-This stage produces:
-
-- `/data/panzheng/canon-thrag/results/index/my_dataset_graph.json`
-- `/data/panzheng/canon-thrag/results/index/my_dataset_kv_store.json`
-- `/data/panzheng/canon-thrag/results/index/my_dataset_graph.gexf`
-- `/data/panzheng/canon-thrag/results/index/my_dataset_edge_index.faiss`
-- `/data/panzheng/canon-thrag/results/index/my_dataset_edge_payloads.npy`
-
-You can also run the graph-only wrapper directly:
-
-```bash
-python index/build_graph.py --dataset my_dataset
-```
-
-## 4. Generate Answers
-
-Short answers:
-
-```bash
-python pipeline.py --dataset my_dataset --steps answer_generation_short
-```
-
-Long answers:
-
-```bash
-python pipeline.py --dataset my_dataset --steps answer_generation_long
-```
-
-Both outputs together:
-
-```bash
-python pipeline.py --dataset my_dataset --steps answer_generation
-```
-
-Artifacts are written to `/data/panzheng/canon-thrag/results/generated/`, and
-chunk-usage logs to `/data/panzheng/canon-thrag/results/chunks/`.
-
-## 5. Run F1 Evaluation
-
-The F1 evaluator compares the short-answer output against
-`/data/panzheng/canon-thrag/data/<dataset>/qa.json`.
-
-```bash
-python pipeline.py --dataset my_dataset --steps evaluation
-```
-
-The result is written to `/data/panzheng/canon-thrag/results/evaluated/my_dataset_eval_f1.json`.
-
-## 6. Pairwise LLM Evaluation
-
-To compare TH-RAG against another system:
-
-```bash
-python evaluate/judge_Ultradomain.py \
-  --answer-a /data/panzheng/canon-thrag/results/generated/my_dataset_answers_long.json \
-  --answer-b baseline_answers.json \
-  --output /data/panzheng/canon-thrag/results/evaluated/my_dataset_pairwise.json \
-  --label-a TH-RAG \
-  --label-b Baseline
-```
-
-Add `--plot /data/panzheng/canon-thrag/results/evaluated/my_dataset_pairwise.png` to save a chart.
-
-## 7. Useful Commands
-
-List datasets:
+List available datasets:
 
 ```bash
 python pipeline.py --list-datasets
 ```
 
-Rebuild everything from scratch:
+Build the graph, generate short answers, and evaluate them:
 
 ```bash
-python pipeline.py --dataset my_dataset --force
+python pipeline.py --dataset my_dataset --steps graph_build answer_generation_short evaluation
 ```
 
-Validate configuration:
+Replace `my_dataset` with the runtime dataset directory name. Use individual
+stage names or aliases from the [pipeline map](README.md#pipeline-stages) to
+run a subset. For long answers:
 
 ```bash
-python test_config.py
+python pipeline.py --dataset my_dataset --steps answer_generation_long
 ```
 
-Run the test suite:
+Omitting `--steps` runs all canonical stages, including both answer modes.
+[`index/build_graph.py`](index/build_graph.py) is an alternative graph-only
+wrapper; [`run_pipeline.bat`](run_pipeline.bat) is the optional Windows launcher.
+
+For pairwise LLM evaluation, replace the example file paths with actual files:
 
 ```bash
-pytest
+python evaluate/judge_Ultradomain.py \
+  --answer-a /absolute/path/my_dataset_answers_long.json \
+  --answer-b /absolute/path/baseline_answers.json \
+  --output /absolute/path/my_dataset_pairwise.json \
+  --label-a TH-RAG \
+  --label-b Baseline
 ```
 
-## 8. Troubleshooting
+Add `--plot /absolute/path/my_dataset_pairwise.png` to save a chart. Score
+semantics and exclusions are documented in the [implementation audit](../docs/resource_audit.md#evaluation).
 
-### Missing API key
+<a id="outputs"></a>
+## 4. Locate outputs
 
-If graph construction or pairwise evaluation fails immediately, confirm that
-`DEEPSEEK_API_KEY` is set in `.env`. Local E5 indexing needs local model files,
-not an embedding API key.
+All paths in this table are relative to `<storage_root>/results/`:
 
-### Missing dataset files
+| Directory | Files |
+|---|---|
+| `index/` | `<dataset>_graph.json`, `<dataset>_kv_store.json`, `<dataset>_graph.gexf`, `<dataset>_edge_index.faiss`, `<dataset>_edge_payloads.npy` |
+| `generated/` | `<dataset>_answers_short.json`, `<dataset>_answers_long.json` |
+| `chunks/` | `<dataset>_chunks_short.jsonl`, `<dataset>_chunks_long.jsonl` |
+| `evaluated/` | `<dataset>_eval_f1.json`; pairwise output uses the explicit CLI path |
 
-The pipeline requires `<THRAG_STORAGE_ROOT>/data/<dataset>/contexts.txt` for
-graph building and `<THRAG_STORAGE_ROOT>/data/<dataset>/qa.json` for answer
-generation and evaluation. `python test_config.py` displays the effective
-paths, and `python pipeline.py --list-datasets` lists datasets in that location.
+Pipeline bookkeeping remains at `thrag/temp/pipeline_state.json` in the code
+checkout. The tokenizer also remains in the checkout, outside runtime storage.
 
-### Existing outputs are reused
+<a id="migration"></a>
+## 5. Reuse or rebuild artifacts
 
-The pipeline skips steps when the expected artifacts already exist. Use `--force` to rebuild them.
+The pipeline primarily checks whether expected files exist. It does not detect
+changes to model, tokenizer, extraction prompt, or configuration automatically.
+Changing any of these can invalidate downstream artifacts; tokenizer changes
+can alter chunk boundaries even when the chunk-size settings stay unchanged.
 
-### FAISS or OpenAI errors
+Archive old results that must be retained, then force a fresh short-answer run:
 
-If the embedding stage fails, verify that the graph JSON and GEXF files were created successfully before rebuilding the index.
+```bash
+python pipeline.py --dataset my_dataset --steps graph_build answer_generation_short evaluation --force
+```
+
+This replaces that dataset's extraction, chunk map, graph, embeddings, short
+answers, and F1 results. Add `answer_generation_long` when long answers are also
+needed. To rerun every canonical stage, omit `--steps` and retain `--force`.
+Do not combine rebuilt graph artifacts with old answers or chunk mappings.
+
+The environment cache flags do not currently control this behavior; their
+status is listed in [unused system settings](../docs/config_reference.md#legacy).
+
+<a id="troubleshooting"></a>
+## 6. Checks and troubleshooting
+
+Run automated checks only in the configured server environment:
+
+```bash
+python -m pytest -q
+```
+
+| Symptom | Where to check |
+|---|---|
+| Missing or rejected API key | The private `.env` created in [step 1](#environment); match the configured service and key |
+| Wrong model or tokenizer | Template values and the [configuration reference](../docs/config_reference.md#paths) |
+| Dataset not found | Resolved storage path and [input layout](#dataset) |
+| Existing outputs skipped | [Reuse and rebuild rules](#migration) |
+| FAISS input missing or wrong dimension | Graph-building stages and [embedding requirements](../docs/config_reference.md#tokenization) |
+| Slow requests, queueing, or timeouts | [Concurrency and retry behavior](../docs/config_reference.md#concurrency); inspect server capacity before increasing parallelism |

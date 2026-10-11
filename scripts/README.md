@@ -1,5 +1,7 @@
 # 数据准备脚本
 
+本文负责抽样与转换规则；TH-RAG 输入约定见 [服务器说明](../thrag/SETUP_GUIDE.md#dataset)，已生成数据及筛选结果只在 [项目上下文](../PROJECT_CONTEXT.md#data)记录。
+
 两个入口只读取本地原始数据、抽样和转换。不会下载数据、安装依赖、调用 API 或启动 TH-RAG。Python 3.10+；HotpotQA 读取 Parquet 需要服务器环境已有 `pyarrow`，MultiHop 仅使用标准库。`_prepare_common.py` 是两个入口共用的本地辅助模块，应一同拉取。
 
 | 入口 | 默认输入 | 默认输出目录 |
@@ -9,21 +11,21 @@
 
 ## 服务器运行命令
 
-按服务器实际仓库位置调整下面的脚本绝对路径。输入和输出默认使用上表中的路径，与当前工作目录无关。
+在服务器进入仓库根目录，即 [服务器说明中的代码目录](../thrag/SETUP_GUIDE.md#environment) 的上一级。下面的脚本路径相对仓库根目录；输入和输出仍按上表定位。
 
 ```bash
-python /home/panzheng/projects/CANON-THRAG/scripts/prepare_hotpotqa_1000.py --seed 42
-python /home/panzheng/projects/CANON-THRAG/scripts/prepare_multihop_1000.py --seed 42
+python scripts/prepare_hotpotqa_1000.py --seed 42
+python scripts/prepare_multihop_1000.py --seed 42
 ```
 
 指定其他输入、输出和 seed：
 
 ```bash
-python /home/panzheng/projects/CANON-THRAG/scripts/prepare_hotpotqa_1000.py \
+python scripts/prepare_hotpotqa_1000.py \
   --input /absolute/path/validation.parquet \
   --output-dir /absolute/path/hotpotqa_1000 --seed 42
 
-python /home/panzheng/projects/CANON-THRAG/scripts/prepare_multihop_1000.py \
+python scripts/prepare_multihop_1000.py \
   --queries /absolute/path/MultiHopRAG.json \
   --corpus /absolute/path/corpus.json \
   --output-dir /absolute/path/multihop_1000 --seed 42
@@ -34,15 +36,15 @@ python /home/panzheng/projects/CANON-THRAG/scripts/prepare_multihop_1000.py \
 输出目录已存在时默认报错，包括空目录。确实需要重写时，在对应命令末尾显式加上 `--force`，例如：
 
 ```bash
-python /home/panzheng/projects/CANON-THRAG/scripts/prepare_hotpotqa_1000.py --seed 42 --force
-python /home/panzheng/projects/CANON-THRAG/scripts/prepare_multihop_1000.py --seed 42 --force
+python scripts/prepare_hotpotqa_1000.py --seed 42 --force
+python scripts/prepare_multihop_1000.py --seed 42 --force
 ```
 
 `--force` 只替换目标目录的 `contexts.txt`、`qa.json` 和 `metadata.json`，不清理其他文件。源数据检查、抽样和 QA/metadata 对齐检查完成后，脚本才开始写文件。
 
 ## 三个输出文件
 
-- `qa.json`：UTF-8 JSON 数组，每条只有 `{"query": "原始问题", "answer": "原始答案"}`，恰好 1,000 条。HotpotQA 的原始 `question` 转为 `query`。
+- `qa.json`：按 [TH-RAG 输入约定](../thrag/SETUP_GUIDE.md#dataset)写出的抽样问题；HotpotQA 的原始 `question` 转为 `query`。样本数和抽样规则见上文。
 - `contexts.txt`：UTF-8 文本，只含原始标题和正文；段落或文档间插入空行，没有问题编号、人工标签或 metadata。字符串内容不做 strip、改写、合并句子或 Unicode 规范化。
 - `metadata.json`：UTF-8 JSON 数组，与 QA 的顺序及 query/answer 完全一致。**仅用于后续检索评测，不是当前 TH-RAG pipeline 的必需输入。** 本次转换不生成 chunk IDs 或 gold evidence 到 chunk 的映射。
 

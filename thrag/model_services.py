@@ -1,4 +1,4 @@
-"""DeepSeek chat clients and a shared, offline CPU E5 encoder."""
+"""vLLM chat clients, local Qwen tokenization, and a shared CPU E5 encoder."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from config import THRAGConfig, get_config
 E5_DIMENSION = 768
 
 
-class DeepSeekTextTokenizer:
-    """Tokenize raw chat-model text using the bundled official V4.1 files."""
+class ChatTextTokenizer:
+    """Tokenize raw chat-model text using the configured local tokenizer files."""
 
     def __init__(self, tokenizer_path: str) -> None:
         self.tokenizer_path = Path(tokenizer_path).expanduser().resolve()
@@ -27,7 +27,7 @@ class DeepSeekTextTokenizer:
             return
         for filename in ("tokenizer.json", "tokenizer_config.json"):
             if not (self.tokenizer_path / filename).is_file():
-                raise FileNotFoundError(f"Missing DeepSeek tokenizer file: {self.tokenizer_path / filename}.")
+                raise FileNotFoundError(f"Missing chat tokenizer file: {self.tokenizer_path / filename}.")
         from transformers import AutoTokenizer
 
         self._tokenizer = AutoTokenizer.from_pretrained(
@@ -59,23 +59,23 @@ class DeepSeekTextTokenizer:
         return len(self.encode(text))
 
 
-_CHAT_TOKENIZERS: dict[str, DeepSeekTextTokenizer] = {}
+_CHAT_TOKENIZERS: dict[str, ChatTextTokenizer] = {}
 _CHAT_TOKENIZERS_LOCK = threading.Lock()
 
 
-def get_deepseek_tokenizer(tokenizer_path: str | None = None) -> DeepSeekTextTokenizer:
-    path = str(Path(tokenizer_path or get_config().deepseek_tokenizer_path).expanduser().resolve())
+def get_chat_tokenizer(tokenizer_path: str | None = None) -> ChatTextTokenizer:
+    path = str(Path(tokenizer_path or get_config().chat_tokenizer_path).expanduser().resolve())
     with _CHAT_TOKENIZERS_LOCK:
         if path not in _CHAT_TOKENIZERS:
-            _CHAT_TOKENIZERS[path] = DeepSeekTextTokenizer(path)
+            _CHAT_TOKENIZERS[path] = ChatTextTokenizer(path)
         return _CHAT_TOKENIZERS[path]
 
 
-def create_deepseek_client(config: THRAGConfig | None = None) -> OpenAI:
+def create_chat_client(config: THRAGConfig | None = None) -> OpenAI:
     config = config or get_config()
-    if not config.deepseek_api_key or config.deepseek_api_key.startswith("your_"):
-        raise ValueError("Set DEEPSEEK_API_KEY in the server environment or thrag/.env.")
-    return OpenAI(api_key=config.deepseek_api_key, base_url=config.deepseek_base_url)
+    if not config.llm_api_key or config.llm_api_key.startswith("your_"):
+        raise ValueError("Set LLM_API_KEY in the server environment or thrag/.env.")
+    return OpenAI(api_key=config.llm_api_key, base_url=config.llm_base_url)
 
 
 class CpuE5Encoder:

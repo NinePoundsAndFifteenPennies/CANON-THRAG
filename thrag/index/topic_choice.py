@@ -78,7 +78,7 @@ def choose_topics_from_graph(
             ],
             response_format={"type": "json_object"},
             temperature=config.answer_temperature,
-            extra_body=config.deepseek_extra_body(),
+            extra_body=config.llm_extra_body(),
         )
         content = response.choices[0].message.content or "{}"
 

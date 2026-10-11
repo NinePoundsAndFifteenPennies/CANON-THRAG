@@ -6,15 +6,15 @@ Extract factual (subject, relation, object) triples from the document and assign
 
 Instructions:
 1. Read the full document.
-2. Extract factual triples grounded in specific sentences.
+2. Extract all factual triples grounded in specific sentences.
 3. Resolve pronouns so the triples use explicit referents.
 4. For the subject and object of each triple, assign:
    - subtopic: a specific category
    - main_topic: a broader category
-5. Extract at most 20 triples. Prefer the most important, explicit, non-redundant
-   relations for representing the document.
-6. Do not repeat the same fact with different wording. Omit weak, speculative,
-   trivial, or purely navigational statements.
+5. Cover all distinct supported facts, including details that may be needed to
+   answer later questions. Do not impose a fixed limit on the number of triples.
+6. Do not repeat the same fact with different wording. Do not invent facts or
+   include unsupported or speculative statements.
 7. Return only valid JSON and finish the complete JSON object.
 
 Expected JSON format:

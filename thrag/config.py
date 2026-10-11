@@ -10,7 +10,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 class THRAGConfig:
@@ -39,21 +39,21 @@ class THRAGConfig:
         self._ensure_directories()
 
     def _load_environment(self) -> None:
-        self.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
-        self.deepseek_base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-        self.deepseek_thinking = os.getenv("DEEPSEEK_THINKING", "disabled").strip().lower()
-        if self.deepseek_thinking not in {"enabled", "disabled"}:
-            raise ValueError("DEEPSEEK_THINKING must be enabled or disabled.")
+        self.llm_api_key = os.getenv("LLM_API_KEY")
+        self.llm_base_url = os.getenv("LLM_BASE_URL", "http://222.27.255.211:11434/v1").rstrip("/")
+        self.llm_thinking = os.getenv("LLM_THINKING", "disabled").strip().lower()
+        if self.llm_thinking not in {"enabled", "disabled"}:
+            raise ValueError("LLM_THINKING must be enabled or disabled.")
 
-        self.default_model = os.getenv("DEFAULT_MODEL", "deepseek-flash")
-        self.chat_model = os.getenv("CHAT_MODEL", "deepseek-flash")
-        self.eval_model = os.getenv("EVAL_MODEL", "deepseek-flash")
+        self.default_model = os.getenv("DEFAULT_MODEL", "Qwen3.5-9B")
+        self.chat_model = os.getenv("CHAT_MODEL", self.default_model)
+        self.eval_model = os.getenv("EVAL_MODEL", self.default_model)
 
         # The chat tokenizer and E5 WordPiece tokenizer serve different models.
-        tokenizer_path = Path(os.getenv("DEEPSEEK_TOKENIZER_PATH", "tokenizers/deepseek-v4.1-flash")).expanduser()
+        tokenizer_path = Path(os.getenv("CHAT_TOKENIZER_PATH", "tokenizers/qwen3.5-9b")).expanduser()
         if not tokenizer_path.is_absolute():
             tokenizer_path = self.project_root / tokenizer_path
-        self.deepseek_tokenizer_path = str(tokenizer_path.resolve())
+        self.chat_tokenizer_path = str(tokenizer_path.resolve())
         self.e5_model_path = os.getenv("E5_MODEL_PATH", "/data/panzheng/bearrag/models/e5-base-v2")
         self.e5_batch_size = int(os.getenv("E5_BATCH_SIZE", "32"))
         self.e5_max_length = int(os.getenv("E5_MAX_LENGTH", "512"))
@@ -63,7 +63,7 @@ class THRAGConfig:
             raise ValueError("E5_MAX_LENGTH must be between 1 and 512.")
 
         self.temperature = float(os.getenv("TEMPERATURE", "0.5"))
-        self.max_tokens_response = int(os.getenv("MAX_TOKENS_RESPONSE", "2000"))
+        self.max_tokens_response = int(os.getenv("MAX_TOKENS_RESPONSE", "16384"))
         self.answer_temperature = float(os.getenv("ANSWER_TEMPERATURE", "0.3"))
         self.answer_max_tokens = int(os.getenv("ANSWER_MAX_TOKENS", "1000"))
         self.eval_temperature = float(os.getenv("EVAL_TEMPERATURE", "0.1"))
@@ -89,7 +89,8 @@ class THRAGConfig:
         self.embedding_top_k = int(os.getenv("EMBEDDING_TOP_K", "5"))
         self.overretrieve_factor = int(os.getenv("OVERRETRIEVE_FACTOR", "5"))
 
-        self.max_context_length = int(os.getenv("MAX_CONTEXT_LENGTH", "4000"))
+        # Informational server limit; this does not change chunking or truncate evidence.
+        self.max_context_length = int(os.getenv("MAX_CONTEXT_LENGTH", "49152"))
 
         self.log_level = os.getenv("LOG_LEVEL", "INFO")
         self.log_file = os.getenv("LOG_FILE", "thrag.log")
@@ -98,9 +99,9 @@ class THRAGConfig:
         self.enable_cache = os.getenv("ENABLE_CACHE", "true").lower() == "true"
         self.cache_ttl = int(os.getenv("CACHE_TTL", "3600"))
 
-    def deepseek_extra_body(self) -> dict[str, Any]:
-        """Explicitly control the official API's default-on thinking mode."""
-        return {"thinking": {"type": self.deepseek_thinking}}
+    def llm_extra_body(self) -> dict[str, Any]:
+        """Control Qwen thinking through the vLLM chat template."""
+        return {"chat_template_kwargs": {"enable_thinking": self.llm_thinking == "enabled"}}
 
     def _ensure_directories(self) -> None:
         for path in [

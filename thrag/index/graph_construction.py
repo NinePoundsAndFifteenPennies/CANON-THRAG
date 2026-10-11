@@ -1,7 +1,7 @@
 """Graph construction for TH-RAG.
 
 This step chunks a dataset's contexts.txt file, stores the chunk text in a KV store,
-and extracts topic-aware triples for each chunk with the official DeepSeek API.
+and extracts topic-aware triples for each chunk with Qwen served by vLLM.
 """
 
 from __future__ import annotations
@@ -24,14 +24,14 @@ from openai import OpenAI
 from tqdm import tqdm
 
 from config import THRAGConfig, get_config
-from model_services import create_deepseek_client, get_deepseek_tokenizer
+from model_services import create_chat_client, get_chat_tokenizer
 from prompt.extract_graph import EXTRACTION_PROMPT
 
 
 def chunk_text(text: str, max_tokens: int, overlap: int, tokenizer_path: str) -> list[str]:
     """Split text into overlapping token windows."""
 
-    tokenizer = get_deepseek_tokenizer(tokenizer_path)
+    tokenizer = get_chat_tokenizer(tokenizer_path)
     tokens = tokenizer.encode(text)
 
     chunks: list[str] = []
@@ -118,7 +118,8 @@ def call_model(client: OpenAI, model_name: str, chunk_text_value: str, chunk_id:
                 "role": "system",
                 "content": (
                     "You extract factual triples from text and return valid JSON. "
-                    "Return at most 20 non-redundant triples and always finish the JSON object."
+                    "Extract all non-redundant, sentence-grounded factual triples "
+                    "and always finish the JSON object."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -126,7 +127,7 @@ def call_model(client: OpenAI, model_name: str, chunk_text_value: str, chunk_id:
         temperature=0.0,
         max_tokens=config.max_tokens_response,
         response_format={"type": "json_object"},
-        extra_body=config.deepseek_extra_body(),
+        extra_body=config.llm_extra_body(),
     )
     if not response.choices:
         raise ValueError(f"{chunk_id}: API response contained no choices")
@@ -166,8 +167,8 @@ def save_kv_store(output_path: Path, kv_store: dict[str, dict[str, str]]) -> Non
 
 
 def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> str:
-    if not config.deepseek_api_key:
-        raise ValueError("DEEPSEEK_API_KEY must be configured before running graph construction.")
+    if not config.llm_api_key:
+        raise ValueError("LLM_API_KEY must be configured before running graph construction.")
 
     input_path = config.get_contexts_file()
     output_path = config.get_graph_json_file()
@@ -177,7 +178,7 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
     full_text = input_path.read_text(encoding="utf-8")
-    chunks = chunk_text(full_text, config.max_tokens, config.overlap, config.deepseek_tokenizer_path)
+    chunks = chunk_text(full_text, config.max_tokens, config.overlap, config.chat_tokenizer_path)
     kv_store = build_kv_store(chunks)
     save_kv_store(kv_store_path, kv_store)
 
@@ -199,7 +200,7 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
             pending_indices.append(index)
 
     if pending_indices:
-        client = create_deepseek_client(config)
+        client = create_chat_client(config)
         executor = ThreadPoolExecutor(max_workers=config.max_workers)
         futures = {
             executor.submit(call_model, client, config.default_model, chunks[index], chunk_ids[index]): index
