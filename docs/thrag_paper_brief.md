@@ -75,7 +75,7 @@ Prompt 要点（Appendix A，p13–17）：
 
 - 长回答 Table 9：限定检索信息、同问题语言、多段落、证据不足承认未知。
 - 短回答 Table 10：用于两个具体 QA 集；最简短答案、最多 5 个词，yes/no 仅输出相应词，信息不足返回指定 abstention 文本。
-- 抽取 Table 11：事实有句子依据，结合上下文消解代词，subject/object 分别分类，仅返回合法 JSON。
+- 抽取 Table 11：明确要求抽取文中所有事实三元组（all factual triples），事实有句子依据，结合上下文消解代词，subject/object 分别分类，仅返回合法 JSON；没有每个 chunk 最多 20 条的规定。2026-10-09 定向核验 Appendix A.3，全文缓存第 844–859 行；本地 20 条上限属于实现修改，见资源审计。
 - Topic Table 12：从给定列表精确选择原标签；不创造标签；即使无明显相关项仍要求选最接近的最小数量。
 - Subtopic Table 13：仅从当前 Topic 的列表选择；要求 min/max，列表较短时允许不足 min；保留候选列表原顺序。
 
@@ -152,7 +152,7 @@ Limitations（p9）**明确承认 Topic/Subtopic normalization 不充分**，举
 
 完整候选列表 + 多次 LLM 选择提供 Top-M 预筛的直接接口。第一版方案维持原选择器/选择预算、sentence/chunk 排名和生成器，才便于隔离收益。所有新旧方法须先在用户 API 下重跑 TH-RAG；论文旧数字仅作历史参考。
 
-原方法刻意没有 query expansion 或额外 context reranker，仅评测 GPT-4o-mini；换成用户 API 会改变模型条件。baseline 与 CANON 应共享缓存的抽取 JSON 和固定协议；具体实验安排留到复现阶段。
+原方法刻意没有 query expansion 或额外 context reranker，正式报告的实验仅用 GPT-4o-mini；换成用户 API 会改变模型条件。Limitations 另称曾做简单模型替换试验：比 GPT-4o-mini 更强的模型提高 TH-RAG 表现，更弱的模型降低表现，变化幅度与 NaiveRAG 相近，因此省略该组实验；没有给出模型名称、配置或数值，不能当成可复核的跨模型稳定性结论。此补充于 2026-10-09 定向核验 p9（全文缓存第 513–519、569–572 行），仍是作者报告而非本地实测。baseline 与 CANON 应共享缓存的抽取 JSON 和固定协议；具体实验安排留到复现阶段。
 
 ## 9. 定向查阅索引
 

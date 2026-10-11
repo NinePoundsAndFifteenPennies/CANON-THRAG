@@ -1,6 +1,6 @@
 # TH-RAG 资源与实现核验
 
-核验日期：2026-10-07
+核验日期：2026-10-09
 
 ## 资源范围
 
@@ -44,6 +44,14 @@ OVERRETRIEVE_FACTOR = 5
 ```
 
 主建图流程使用 `MAX_TOKENS` 和 `OVERLAP`；`ALT_MAX_TOKENS` 与 `ALT_OVERLAP` 仅由配置读取。选择数量的 `min/max` 进入提示词和解析限制，但不强制模型返回不少于 `min` 个标签。失败回退取候选列表开头的若干项。
+
+### 抽取数量：论文、上游与本地修改
+
+- 论文 Appendix A.3 / Table 11 要求抽取文中所有有句子依据的事实三元组，没有每块 20 条的规定。
+- 上游 `6543fc2a8f5aadecd3032352d7d31dcd5791ec73` 的 [extract_graph.py](https://github.com/Tiabet/TH-RAG/blob/6543fc2a8f5aadecd3032352d7d31dcd5791ec73/prompt/extract_graph.py) 也没有该数量上限。
+- 本地 commit `336eaa484efa58ffd301d06a98992cc0e07c6c5b`（2026-10-08）新增“最多 20 条、优先重要且明确的非重复事实”；当前 `prompt/extract_graph.py` 与 `index/graph_construction.py` 的 system prompt 均有此限制。它是提示词要求，解析器没有按 20 条截断列表，也不保证每块输出 20 条。
+- 一条是 `(subject, relation, object)` 事实记录，另带 source sentence 及 subject/object 各自的 Topic/Subtopic；不是三类节点或所有图边合计 20 个。
+- 当前切块为 3000/300，论文为 1200/100；固定 20 条是否损害关键事实覆盖尚无正式实测。取消该人为上限、恢复按有依据事实覆盖的抽取是当前建议，代码尚未修改。
 
 ### 候选过滤、fallback 与 K2
 
