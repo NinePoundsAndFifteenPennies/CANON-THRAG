@@ -1,0 +1,26 @@
+{
+  "source": "https://modelscope.cn/models/Qwen/Qwen3.5-9B",
+  "revision": "master",
+  "files": {
+    "tokenizer.json": {
+      "revision": "e8885939589b1e032d291a1ceefd21b775e6277e",
+      "sha256": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42"
+    },
+    "tokenizer_config.json": {
+      "revision": "aa2aaf6060dd45e8ca24da2d37ffb0172eb985d6",
+      "sha256": "316230d6a809701f4db5ea8f8fc862bc3a6f3229c937c174e674ff3ca0a64ac8"
+    },
+    "vocab.json": {
+      "revision": "e8885939589b1e032d291a1ceefd21b775e6277e",
+      "sha256": "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003"
+    },
+    "merges.txt": {
+      "revision": "e8885939589b1e032d291a1ceefd21b775e6277e",
+      "sha256": "a9d356d7bdf1ef4949e3e748e95b8e10ad9d4e2e838eddc38a0a7b6b94d1db8"
+    },
+    "chat_template.jinja": {
+      "revision": "aa2aaf6060dd45e8ca24da2d37ffb0172eb985d6",
+      "sha256": "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715"
+    }
+  }
+}
