@@ -172,6 +172,22 @@ def validate_snapshot(blocks: dict[str, dict[str, Any]], kv_store: dict[str, dic
             raise ValueError(f"Graph chunk {chunk_id} content differs from the original KV store")
 
 
+def graph_checkpoint_is_complete(config: THRAGConfig) -> bool:
+    """Check extraction completeness from KV and graph artifacts only."""
+
+    if not config.get_kv_store_file().exists() or not config.get_graph_json_file().exists():
+        return False
+    kv_store = load_kv_store(config)
+    blocks = load_existing_blocks(config.get_graph_json_file())
+    if set(blocks) != set(kv_store):
+        return False
+    try:
+        validate_snapshot(blocks, kv_store)
+    except ValueError:
+        return False
+    return True
+
+
 def call_model(
     client: OpenAI,
     model_name: str,
@@ -370,11 +386,7 @@ def invalidate_downstream_steps(config: THRAGConfig) -> None:
 
 
 
-def run_graph_construction(
-    config: THRAGConfig,
-    force_rebuild: bool = False,
-    resume_existing: bool = False,
-) -> str:
+def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> str:
     if not config.llm_api_key:
         raise ValueError("LLM_API_KEY must be configured before running graph construction.")
 
@@ -385,43 +397,12 @@ def run_graph_construction(
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
-    pending_failure_log = has_pending_failures(config)
-    if not force_rebuild and pending_failure_log:
-        print(f"Pending extraction failures found; repair the saved chunks: {get_failure_file(config)}")
-        return str(output_path)
-
-    resume_checkpoint = False
-    checkpoint_kv_store: dict[str, dict[str, str]] = {}
-    checkpoint_blocks: dict[str, dict[str, Any]] = {}
-    if kv_store_path.exists():
-        checkpoint_kv_store = load_kv_store(config)
-        checkpoint_blocks = load_existing_blocks(output_path)
-        if set(checkpoint_blocks) - set(checkpoint_kv_store):
-            raise ValueError("Graph JSON has chunks outside the saved KV store; remove stale artifacts for a full rebuild")
-
-        valid_checkpoint_blocks = 0
-        for chunk_id, block in checkpoint_blocks.items():
-            try:
-                validate_snapshot({chunk_id: block}, checkpoint_kv_store)
-            except ValueError:
-                continue
-            valid_checkpoint_blocks += 1
-
-        graph_state = config.get_dataset_state().get("graph_construction", {})
-        checkpoint_incomplete = valid_checkpoint_blocks < len(checkpoint_kv_store)
-        checkpoint_interrupted = graph_state.get("completed") is False
-        resume_checkpoint = (
-            resume_existing
-            or not force_rebuild
-            or checkpoint_incomplete
-            or checkpoint_interrupted
-            or pending_failure_log
-        )
-
+    resume_checkpoint = not force_rebuild and kv_store_path.exists()
     if resume_checkpoint:
-        # The KV store fixes chunk identities. Never rechunk an interrupted run.
-        kv_store = checkpoint_kv_store
-        existing_blocks = checkpoint_blocks
+        kv_store = load_kv_store(config)
+        existing_blocks = load_existing_blocks(output_path)
+        if set(existing_blocks) - set(kv_store):
+            raise ValueError("Graph JSON has chunks outside the saved KV store; remove stale artifacts for a full rebuild")
     else:
         full_text = input_path.read_text(encoding="utf-8")
         chunks = chunk_text(full_text, config.max_tokens, config.overlap, config.chat_tokenizer_path)
@@ -436,7 +417,7 @@ def run_graph_construction(
 
     ordered_blocks: list[dict[str, Any] | None] = [None] * len(chunks)
     pending_indices: list[int] = []
-    failures: dict[str, dict[str, Any]] = {}
+    checkpoint_errors: dict[str, Exception] = {}
 
     for index, chunk_id in enumerate(chunk_ids):
         existing_block = existing_blocks.get(chunk_id)
@@ -444,12 +425,24 @@ def run_graph_construction(
             try:
                 validate_snapshot({chunk_id: existing_block}, kv_store)
             except ValueError as exc:
-                failures[chunk_id] = make_failure(config, chunk_id, index, chunks[index], exc)
+                checkpoint_errors[chunk_id] = exc
             else:
                 ordered_blocks[index] = existing_block
                 continue
         pending_indices.append(index)
-        if chunk_id not in failures:
+
+    # Fail records are maintained only after progress is derived from KV and graph.
+    previous_failures = load_failures(config) if resume_checkpoint else {}
+    failures: dict[str, dict[str, Any]] = {}
+    for index in pending_indices:
+        chunk_id = chunk_ids[index]
+        if chunk_id in checkpoint_errors:
+            failures[chunk_id] = make_failure(
+                config, chunk_id, index, chunks[index], checkpoint_errors[chunk_id]
+            )
+        elif chunk_id in previous_failures:
+            failures[chunk_id] = previous_failures[chunk_id]
+        else:
             failures[chunk_id] = make_failure(
                 config, chunk_id, index, chunks[index],
                 ExtractionResponseError("Chunk is awaiting first-round extraction", "PendingExtraction"),
@@ -517,11 +510,7 @@ def run_graph_construction(
 
 
 
-def main(
-    dataset_name: str,
-    force_rebuild: bool = False,
-    resume_existing: bool = False,
-) -> str:
+def main(dataset_name: str, force_rebuild: bool = False) -> str:
     """CLI-compatible entry point for graph construction."""
 
     config = get_config(dataset_name)
@@ -529,11 +518,7 @@ def main(
     print(f"Input: {config.get_contexts_file()}")
     print(f"Graph JSON: {config.get_graph_json_file()}")
     print(f"KV store: {config.get_kv_store_file()}")
-    return run_graph_construction(
-        config,
-        force_rebuild=force_rebuild,
-        resume_existing=resume_existing,
-    )
+    return run_graph_construction(config, force_rebuild=force_rebuild)
 
 
 if __name__ == "__main__":
@@ -542,7 +527,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Recompute a completed extraction; resume an incomplete saved checkpoint.",
+        help="Discard saved graph progress and recompute the extraction from scratch.",
     )
     args = parser.parse_args()
     main(dataset_name=args.dataset, force_rebuild=args.force)

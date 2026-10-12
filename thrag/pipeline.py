@@ -62,10 +62,9 @@ def expected_outputs(config: THRAGConfig) -> dict[str, list[Path]]:
 
 def step_is_complete(config: THRAGConfig, step_name: str) -> bool:
     if step_name == "graph_construction":
-        from index.graph_construction import has_pending_failures
+        from index.graph_construction import graph_checkpoint_is_complete
 
-        if has_pending_failures(config):
-            return False
+        return graph_checkpoint_is_complete(config)
 
     outputs = expected_outputs(config)[step_name]
     state = config.get_dataset_state()
@@ -108,11 +107,7 @@ def validate_inputs(config: THRAGConfig, steps: list[str]) -> None:
 def run_graph_construction(dataset_name: str, force_rebuild: bool) -> str:
     from index.graph_construction import main as graph_construction_main
 
-    return graph_construction_main(
-        dataset_name=dataset_name,
-        force_rebuild=force_rebuild,
-        resume_existing=True,
-    )
+    return graph_construction_main(dataset_name=dataset_name, force_rebuild=force_rebuild)
 
 
 def run_json_to_gexf(dataset_name: str, force_rebuild: bool) -> str:
@@ -194,22 +189,13 @@ def run_pipeline(
                 results["graph_construction"] = repaired_output
                 graph_repaired = True
 
-        resume_extraction = False
-        if step_name == "graph_construction" and not force_rebuild:
-            from index.graph_construction import has_pending_failures
-
-            resume_extraction = has_pending_failures(config)
-
         invalidated = config.get_dataset_state().get(step_name, {}).get("completed") is False
         rebuild_step = force_rebuild or (
             step_name != "graph_construction" and (graph_repaired or invalidated)
         )
-        skipped = not rebuild_step and (resume_extraction or step_is_complete(config, step_name))
+        skipped = not rebuild_step and step_is_complete(config, step_name)
         if skipped:
-            if resume_extraction:
-                print("Reusing saved chunks and successful JSON before repairing failed chunks.")
-            else:
-                print("Skipped because the expected outputs already exist. Use --force to rebuild.")
+            print("Skipped because the expected outputs already exist. Use --force to rebuild.")
         else:
             results[step_name] = STEP_HANDLERS[step_name](dataset_name, rebuild_step)
 
@@ -219,7 +205,7 @@ def run_pipeline(
                 results[step_name] = repaired_output
                 graph_repaired = True
 
-        if not skipped or resume_extraction:
+        if not skipped:
             print("Completed.")
 
     print("\n" + "=" * 72)
@@ -281,7 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Rebuild selected downstream outputs while reusing a verified graph checkpoint.",
+        help="Discard reusable outputs and rebuild every selected stage from scratch.",
     )
     parser.add_argument(
         "--list-datasets",
