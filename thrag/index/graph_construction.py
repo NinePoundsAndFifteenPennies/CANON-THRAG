@@ -417,36 +417,33 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
 
     ordered_blocks: list[dict[str, Any] | None] = [None] * len(chunks)
     pending_indices: list[int] = []
-    checkpoint_errors: dict[str, Exception] = {}
 
     for index, chunk_id in enumerate(chunk_ids):
         existing_block = existing_blocks.get(chunk_id)
         if existing_block is not None:
             try:
                 validate_snapshot({chunk_id: existing_block}, kv_store)
-            except ValueError as exc:
-                checkpoint_errors[chunk_id] = exc
+            except ValueError:
+                pass
             else:
                 ordered_blocks[index] = existing_block
                 continue
         pending_indices.append(index)
 
-    # Fail records are maintained only after progress is derived from KV and graph.
-    previous_failures = load_failures(config) if resume_checkpoint else {}
-    failures: dict[str, dict[str, Any]] = {}
-    for index in pending_indices:
-        chunk_id = chunk_ids[index]
-        if chunk_id in checkpoint_errors:
-            failures[chunk_id] = make_failure(
-                config, chunk_id, index, chunks[index], checkpoint_errors[chunk_id]
-            )
-        elif chunk_id in previous_failures:
-            failures[chunk_id] = previous_failures[chunk_id]
-        else:
-            failures[chunk_id] = make_failure(
-                config, chunk_id, index, chunks[index],
+    # Resume uses the existing fail state unchanged. Fresh runs initialize it once.
+    if resume_checkpoint:
+        failures = load_failures(config)
+    else:
+        failures = {
+            chunk_ids[index]: make_failure(
+                config,
+                chunk_ids[index],
+                index,
+                chunks[index],
                 ExtractionResponseError("Chunk is awaiting first-round extraction", "PendingExtraction"),
             )
+            for index in pending_indices
+        }
 
     saved_count = len(chunks) - len(pending_indices)
     if resume_checkpoint:
@@ -458,8 +455,8 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
     if pending_indices:
         invalidate_downstream_steps(config)
     mark_extraction_state(config, completed=False, chunks=len(chunks))
-    # Journal pending identities before partial results can be mistaken for completion.
-    save_failures(config, failures)
+    if not resume_checkpoint:
+        save_failures(config, failures)
     save_blocks(output_path, [block for block in ordered_blocks if block is not None])
 
     if pending_indices:
