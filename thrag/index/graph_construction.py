@@ -353,8 +353,28 @@ def mark_extraction_state(config: THRAGConfig, completed: bool, chunks: int) -> 
         config.save_pipeline_state(state)
 
 
+def invalidate_downstream_steps(config: THRAGConfig) -> None:
+    """Ensure derived artifacts are rebuilt after the graph JSON changes."""
 
-def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> str:
+    state = config.load_pipeline_state() or {}
+    dataset_state = state.setdefault(config.dataset_name, {})
+    for step_name in (
+        "json_to_gexf",
+        "edge_embedding",
+        "answer_generation_short",
+        "answer_generation_long",
+        "evaluation_f1",
+    ):
+        dataset_state.setdefault(step_name, {})["completed"] = False
+    config.save_pipeline_state(state)
+
+
+
+def run_graph_construction(
+    config: THRAGConfig,
+    force_rebuild: bool = False,
+    resume_existing: bool = False,
+) -> str:
     if not config.llm_api_key:
         raise ValueError("LLM_API_KEY must be configured before running graph construction.")
 
@@ -365,22 +385,52 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
-    if not force_rebuild and has_pending_failures(config):
+    pending_failure_log = has_pending_failures(config)
+    if not force_rebuild and pending_failure_log:
         print(f"Pending extraction failures found; repair the saved chunks: {get_failure_file(config)}")
         return str(output_path)
 
-    if not force_rebuild and kv_store_path.exists():
-        # Resuming extraction must keep the saved chunk identities and contents.
-        kv_store = load_kv_store(config)
+    resume_checkpoint = False
+    checkpoint_kv_store: dict[str, dict[str, str]] = {}
+    checkpoint_blocks: dict[str, dict[str, Any]] = {}
+    if kv_store_path.exists():
+        checkpoint_kv_store = load_kv_store(config)
+        checkpoint_blocks = load_existing_blocks(output_path)
+        if set(checkpoint_blocks) - set(checkpoint_kv_store):
+            raise ValueError("Graph JSON has chunks outside the saved KV store; remove stale artifacts for a full rebuild")
+
+        valid_checkpoint_blocks = 0
+        for chunk_id, block in checkpoint_blocks.items():
+            try:
+                validate_snapshot({chunk_id: block}, checkpoint_kv_store)
+            except ValueError:
+                continue
+            valid_checkpoint_blocks += 1
+
+        graph_state = config.get_dataset_state().get("graph_construction", {})
+        checkpoint_incomplete = valid_checkpoint_blocks < len(checkpoint_kv_store)
+        checkpoint_interrupted = graph_state.get("completed") is False
+        resume_checkpoint = (
+            resume_existing
+            or not force_rebuild
+            or checkpoint_incomplete
+            or checkpoint_interrupted
+            or pending_failure_log
+        )
+
+    if resume_checkpoint:
+        # The KV store fixes chunk identities. Never rechunk an interrupted run.
+        kv_store = checkpoint_kv_store
+        existing_blocks = checkpoint_blocks
     else:
         full_text = input_path.read_text(encoding="utf-8")
         chunks = chunk_text(full_text, config.max_tokens, config.overlap, config.chat_tokenizer_path)
         kv_store = build_kv_store(chunks)
         save_kv_store(kv_store_path, kv_store)
+        existing_blocks = {}
 
     chunk_ids = list(kv_store.keys())
     chunks = [kv_store[chunk_id]["content"] for chunk_id in chunk_ids]
-    existing_blocks = {} if force_rebuild else load_existing_blocks(output_path)
     if set(existing_blocks) - set(kv_store):
         raise ValueError("Graph JSON has chunks outside the saved KV store; use --force for a full rebuild")
 
@@ -405,6 +455,15 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
                 ExtractionResponseError("Chunk is awaiting first-round extraction", "PendingExtraction"),
             )
 
+    saved_count = len(chunks) - len(pending_indices)
+    if resume_checkpoint:
+        print(
+            f"Resuming graph extraction: {saved_count}/{len(chunks)} chunks already saved; "
+            f"{len(pending_indices)} chunks pending."
+        )
+
+    if pending_indices:
+        invalidate_downstream_steps(config)
     mark_extraction_state(config, completed=False, chunks=len(chunks))
     # Journal pending identities before partial results can be mistaken for completion.
     save_failures(config, failures)
@@ -424,7 +483,12 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
                     for index in pending_indices
                 }
                 for completed_count, future in enumerate(
-                    tqdm(as_completed(futures), total=len(futures), desc="Extracting triples"),
+                    tqdm(
+                        as_completed(futures),
+                        total=len(chunks),
+                        initial=saved_count,
+                        desc="Extracting triples",
+                    ),
                     start=1,
                 ):
                     index = futures[future]
@@ -453,7 +517,11 @@ def run_graph_construction(config: THRAGConfig, force_rebuild: bool = False) -> 
 
 
 
-def main(dataset_name: str, force_rebuild: bool = False) -> str:
+def main(
+    dataset_name: str,
+    force_rebuild: bool = False,
+    resume_existing: bool = False,
+) -> str:
     """CLI-compatible entry point for graph construction."""
 
     config = get_config(dataset_name)
@@ -461,7 +529,11 @@ def main(dataset_name: str, force_rebuild: bool = False) -> str:
     print(f"Input: {config.get_contexts_file()}")
     print(f"Graph JSON: {config.get_graph_json_file()}")
     print(f"KV store: {config.get_kv_store_file()}")
-    return run_graph_construction(config, force_rebuild=force_rebuild)
+    return run_graph_construction(
+        config,
+        force_rebuild=force_rebuild,
+        resume_existing=resume_existing,
+    )
 
 
 if __name__ == "__main__":
@@ -470,7 +542,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Recompute chunk extraction even if output artifacts already exist.",
+        help="Recompute a completed extraction; resume an incomplete saved checkpoint.",
     )
     args = parser.parse_args()
     main(dataset_name=args.dataset, force_rebuild=args.force)

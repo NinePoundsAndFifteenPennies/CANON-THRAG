@@ -108,7 +108,11 @@ def validate_inputs(config: THRAGConfig, steps: list[str]) -> None:
 def run_graph_construction(dataset_name: str, force_rebuild: bool) -> str:
     from index.graph_construction import main as graph_construction_main
 
-    return graph_construction_main(dataset_name=dataset_name, force_rebuild=force_rebuild)
+    return graph_construction_main(
+        dataset_name=dataset_name,
+        force_rebuild=force_rebuild,
+        resume_existing=True,
+    )
 
 
 def run_json_to_gexf(dataset_name: str, force_rebuild: bool) -> str:
@@ -277,7 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Rebuild outputs even if the target artifacts already exist.",
+        help="Rebuild selected downstream outputs while reusing a verified graph checkpoint.",
     )
     parser.add_argument(
         "--list-datasets",

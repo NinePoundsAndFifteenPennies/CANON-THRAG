@@ -25,6 +25,7 @@ from index.graph_construction import (
     load_existing_blocks,
     load_failures,
     load_kv_store,
+    invalidate_downstream_steps,
     make_failure,
     mark_extraction_state,
     save_blocks,
@@ -123,14 +124,7 @@ def repair_graph(config: THRAGConfig) -> str:
 
     if pending:
         # Preserve invalidation across a manual repair followed by a later pipeline.
-        state = config.load_pipeline_state() or {}
-        dataset_state = state.setdefault(config.dataset_name, {})
-        for step_name in (
-            "json_to_gexf", "edge_embedding", "answer_generation_short",
-            "answer_generation_long", "evaluation_f1",
-        ):
-            dataset_state.setdefault(step_name, {})["completed"] = False
-        config.save_pipeline_state(state)
+        invalidate_downstream_steps(config)
         try:
             client = create_chat_client(config)
         except Exception as exc:
