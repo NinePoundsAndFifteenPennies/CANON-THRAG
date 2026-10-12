@@ -197,7 +197,6 @@ def call_model(
             "json_schema": {"name": "chunk_triples", "strict": True, "schema": TRIPLES_SCHEMA},
         },
         extra_body=config.llm_extra_body(),
-        timeout=config.timeout_seconds,
     )
     if not response.choices:
         raise ExtractionResponseError(f"{chunk_id}: API response contained no choices", "MissingChoices")
