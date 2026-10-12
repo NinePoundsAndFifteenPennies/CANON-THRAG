@@ -1,3 +1,51 @@
+MAX_TRIPLES = 110
+
+TRIPLES_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["triples"],
+    "properties": {
+        "triples": {
+            "type": "array",
+            "maxItems": MAX_TRIPLES,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["triple", "sentence", "subject", "object"],
+                "properties": {
+                    "triple": {
+                        "type": "array",
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "items": {"$ref": "#/$defs/text"},
+                    },
+                    "sentence": {"$ref": "#/$defs/text"},
+                    "subject": {"$ref": "#/$defs/category"},
+                    "object": {"$ref": "#/$defs/category"},
+                },
+            },
+        },
+    },
+    "$defs": {
+        "text": {"type": "string", "minLength": 1},
+        "category": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["subtopic", "main_topic"],
+            "properties": {
+                "subtopic": {"$ref": "#/$defs/text"},
+                "main_topic": {"$ref": "#/$defs/text"},
+            },
+        },
+    },
+}
+
+SYSTEM_PROMPT = f"""You are an information extraction system.
+Return only a complete JSON object matching the supplied schema.
+Extract at most {MAX_TRIPLES} triples per chunk; an empty triples array is valid.
+Every fact must be supported by the input document, and sentence must contain
+the original text supporting that fact. Do not invent facts."""
+
 EXTRACTION_PROMPT = """
 You are an information extraction system.
 
@@ -6,16 +54,17 @@ Extract factual (subject, relation, object) triples from the document and assign
 
 Instructions:
 1. Read the full document.
-2. Extract all factual triples grounded in specific sentences.
+2. Extract at most {{max_triples}} factual triples grounded in specific sentences.
 3. Resolve pronouns so the triples use explicit referents.
 4. For the subject and object of each triple, assign:
    - subtopic: a specific category
    - main_topic: a broader category
-5. Cover all distinct supported facts, including details that may be needed to
-   answer later questions. Do not impose a fixed limit on the number of triples.
+5. Choose distinct supported facts within this limit, including useful details.
+   Set sentence to original supporting text from the document.
 6. Do not repeat the same fact with different wording. Do not invent facts or
    include unsupported or speculative statements.
-7. Return only valid JSON and finish the complete JSON object.
+7. Return only valid JSON matching the schema and finish the complete JSON object.
+   Return {"triples": []} when no supported facts can be extracted.
 
 Expected JSON format:
 {
@@ -70,4 +119,4 @@ Example JSON output:
 
 Input document:
 {{document}}
-"""
+""".replace("{{max_triples}}", str(MAX_TRIPLES))

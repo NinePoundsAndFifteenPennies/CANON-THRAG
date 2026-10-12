@@ -61,12 +61,33 @@ def expected_outputs(config: THRAGConfig) -> dict[str, list[Path]]:
 
 
 def step_is_complete(config: THRAGConfig, step_name: str) -> bool:
+    if step_name == "graph_construction":
+        from index.graph_construction import has_pending_failures
+
+        if has_pending_failures(config):
+            return False
+
     outputs = expected_outputs(config)[step_name]
+    state = config.get_dataset_state()
+    if state.get(step_name, {}).get("completed") is False:
+        return False
     if all(path.exists() for path in outputs):
         return True
 
-    state = config.get_dataset_state()
     return bool(state.get(step_name, {}).get("completed")) and all(path.exists() for path in outputs)
+
+
+def repair_pending_graph(config: THRAGConfig) -> str | None:
+    """Make one repair attempt before allowing the dataset past extraction."""
+    from index.graph_construction import has_pending_failures
+
+    if not has_pending_failures(config):
+        return None
+
+    from index.repair_graph import repair_graph
+
+    print(f"Repairing pending extraction failures for dataset: {config.dataset_name}")
+    return repair_graph(config)
 
 
 def validate_inputs(config: THRAGConfig, steps: list[str]) -> None:
@@ -157,17 +178,45 @@ def run_pipeline(
     print("=" * 72)
 
     results: dict[str, object] = {}
+    graph_repaired = False
 
     for index, step_name in enumerate(steps, start=1):
         print(f"\nStep {index}: {step_name}")
         print("-" * 72)
 
-        if not force_rebuild and step_is_complete(config, step_name):
-            print("Skipped because the expected outputs already exist. Use --force to rebuild.")
-            continue
+        if step_name != "graph_construction":
+            repaired_output = repair_pending_graph(config)
+            if repaired_output is not None:
+                results["graph_construction"] = repaired_output
+                graph_repaired = True
 
-        results[step_name] = STEP_HANDLERS[step_name](dataset_name, force_rebuild)
-        print("Completed.")
+        resume_extraction = False
+        if step_name == "graph_construction" and not force_rebuild:
+            from index.graph_construction import has_pending_failures
+
+            resume_extraction = has_pending_failures(config)
+
+        invalidated = config.get_dataset_state().get(step_name, {}).get("completed") is False
+        rebuild_step = force_rebuild or (
+            step_name != "graph_construction" and (graph_repaired or invalidated)
+        )
+        skipped = not rebuild_step and (resume_extraction or step_is_complete(config, step_name))
+        if skipped:
+            if resume_extraction:
+                print("Reusing saved chunks and successful JSON before repairing failed chunks.")
+            else:
+                print("Skipped because the expected outputs already exist. Use --force to rebuild.")
+        else:
+            results[step_name] = STEP_HANDLERS[step_name](dataset_name, rebuild_step)
+
+        if step_name == "graph_construction":
+            repaired_output = repair_pending_graph(config)
+            if repaired_output is not None:
+                results[step_name] = repaired_output
+                graph_repaired = True
+
+        if not skipped or resume_extraction:
+            print("Completed.")
 
     print("\n" + "=" * 72)
     print("Pipeline finished.")
@@ -180,7 +229,7 @@ def print_summary(config: THRAGConfig, steps: list[str]) -> None:
     print(f"Summary for dataset: {config.dataset_name}")
     for step_name in steps:
         outputs = [str(path) for path in artifacts[step_name] if path.exists()]
-        status = "complete" if outputs else "missing"
+        status = "complete" if step_is_complete(config, step_name) else ("incomplete" if outputs else "missing")
         print(f"- {step_name}: {status}")
         for output in outputs:
             print(f"  {output}")

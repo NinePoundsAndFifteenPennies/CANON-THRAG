@@ -1,6 +1,6 @@
 # CANON-THRAG 项目上下文与进度
 
-更新：2026-10-11（Asia/Shanghai）。本文件是唯一进度入口；文档职责见 [导航](README.md#documents)。
+更新：2026-10-12（Asia/Shanghai）。本文件是唯一进度入口；文档职责见 [导航](README.md#documents)。
 
 ## 目标与范围
 
@@ -9,8 +9,8 @@
 ## 已完成与当前状态
 
 - 论文事实、方案、实现差异和配置说明已各有独立维护位置；研究笔记及源文证据保留原文。
-- 模型适配已改为用户部署的 Qwen3.5-9B，本版采用非思考模式；抽取协议调整和分词器切换已完成本地修改。部署参数的唯一文档来源是 [配置模板](thrag/.env.example)，行为说明见 [配置参考](docs/config_reference.md)。
-- 代码迁移及本次文档整理尚未提交/推送，也未在服务器运行验证。用户要求本地不运行项目代码或测试。
+- 模型适配已改为用户部署的 Qwen3.5-9B，本版采用非思考模式；抽取协议调整和分词器切换已完成本地修改并推送。部署参数的唯一文档来源是 [配置模板](thrag/.env.example)，行为说明见 [配置参考](docs/config_reference.md)。
+- 抽取已统一为每 chunk 至多 110 条三元组，使用请求级 JSON Schema 与严格落盘校验；首轮失败按 dataset 记录并继续其他 chunk。独立修复入口为 [repair_graph.py](thrag/index/repair_graph.py)，沿用原 KV 身份合并；pipeline 在抽取后及后续阶段前检查失败，自动修复一次，未解决则停止并保留成功结果与剩余记录。
 - 配置生效范围与并发问题已经静态核对；详细结论只在配置参考维护，尚未实施并发结构或遗留配置清理。
 - 核心改进模块尚未实现；正式问题 IDs、预算与复现协议仍需固定。
 
@@ -36,13 +36,12 @@
 
 ## 待解决与下一步
 
-1. 将代码与分词器同步到服务器，由用户按 [环境配置步骤](thrag/SETUP_GUIDE.md#environment)填写密钥并核验示例流程；旧产物按 [迁移步骤](thrag/SETUP_GUIDE.md#migration)重建。
-2. 确认服务可承受的并发，决定是否处理 [配置参考中的并发与重试问题](docs/config_reference.md#concurrency)。
-3. 固定正式问题 IDs、预算和论文忠实/公开代码协议，补齐 [实现审计列出的评测能力缺口](docs/resource_audit.md)，启动 baseline。
-4. 依 [实验设计](docs/idea_digest.md#validation)实现并验证两个核心模块；M、合并阈值在开发/验证集选择，成功后补扩展实验。
+1. 确认服务可承受的并发，决定是否处理 [配置参考中的并发与重试问题](docs/config_reference.md#concurrency)。
+2. 固定正式问题 IDs、预算和论文忠实/公开代码协议，补齐 [实现审计列出的评测能力缺口](docs/resource_audit.md)，启动 baseline。
+3. 依 [实验设计](docs/idea_digest.md#validation)实现并验证两个核心模块；M、合并阈值在开发/验证集选择，成功后补扩展实验。
 
 ## 仓库与会话约束
 
 上游版本只在 [UPSTREAM.md](thrag/UPSTREAM.md)维护。本地 `main` 跟踪 `origin/main`，私有仓库为 [CANON-THRAG](https://github.com/NinePoundsAndFifteenPennies/CANON-THRAG)。本机该仓库的 HTTPS 认证仍引用 `tmp/` 中的便携 CLI 与配置，切换认证后才能清理剩余工具。
 
-交流使用“主题/子主题选择”。当前授权不包括本地运行或新增可选研究模块；论文事实、用户提案、代码行为与运行实测须分开。源文只按需定位读取，证据记录要求见 [AGENTS.md](AGENTS.md)。
+交流使用“主题/子主题选择”。当前授权不包括完整数据集运行或新增可选研究模块；论文事实、用户提案、代码行为与运行实测须分开。源文只按需定位读取，证据记录要求见 [AGENTS.md](AGENTS.md)。

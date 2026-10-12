@@ -1,12 +1,13 @@
 import json
 
 import networkx as nx
+import pytest
 
 from index.graph_construction import parse_triples_response
 from index.json_to_gexf import convert_json_to_gexf
 
 
-def test_parse_triples_response_accepts_top_level_list() -> None:
+def test_parse_triples_response_rejects_top_level_list() -> None:
     payload = json.dumps(
         [
             {
@@ -18,9 +19,8 @@ def test_parse_triples_response_accepts_top_level_list() -> None:
         ]
     )
 
-    triples = parse_triples_response(payload)
-    assert len(triples) == 1
-    assert triples[0]["triple"][2] == "FAISS"
+    with pytest.raises(ValueError):
+        parse_triples_response(payload)
 
 
 def test_parse_triples_response_accepts_json_object() -> None:
@@ -29,6 +29,7 @@ def test_parse_triples_response_accepts_json_object() -> None:
             "triples": [
                 {
                     "triple": ["TH-RAG", "uses", "FAISS"],
+                    "sentence": "TH-RAG uses FAISS.",
                     "subject": {"subtopic": "System", "main_topic": "Research"},
                     "object": {"subtopic": "Index", "main_topic": "Infrastructure"},
                 }
