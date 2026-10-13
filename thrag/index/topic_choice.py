@@ -10,13 +10,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-import json
 from typing import List
 
 import networkx as nx
 from openai import OpenAI
 
 from config import get_config
+from index.label_selection import format_numbered_candidates, select_labels
 from prompt.topic_choice import TOPIC_CHOICE_PROMPT
 
 config = get_config()
@@ -62,45 +62,20 @@ def choose_topics_from_graph(
 
     prompt = (
         TOPIC_CHOICE_PROMPT
-        .replace("{{TOPIC_LIST}}", json.dumps(topic_labels, ensure_ascii=False))
+        .replace("{{TOPIC_LIST}}", format_numbered_candidates(topic_labels))
         .replace("{{question}}", question)
         .replace("{min_topics}", str(min_topics))
         .replace("{max_topics}", str(max_topics))
     )
 
-    last_error: Exception | None = None
-    for attempt in range(1, max_retries + 1):
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You select relevant topic labels from a fixed list."},
-                {"role": "user", "content": prompt},
-            ],
-            response_format={"type": "json_object"},
-            temperature=config.answer_temperature,
-            extra_body=config.llm_extra_body(),
-        )
-        content = response.choices[0].message.content or "{}"
-
-        try:
-            payload = json.loads(content)
-            chosen = payload.get("topics")
-            if not isinstance(chosen, list):
-                raise ValueError("The model response did not contain a list under 'topics'.")
-
-            deduplicated = [label for label in topic_labels if label in set(chosen)]
-            if not deduplicated:
-                raise ValueError("The model did not return any valid topic labels.")
-
-            return deduplicated[:max_topics]
-        except Exception as exc:
-            last_error = exc
-            print(f"Topic selection attempt {attempt} failed: {exc}")
-
-    fallback = topic_labels[:max_topics]
-    if fallback:
-        print("Topic selection fell back to the first available graph topics.")
-        return fallback
-
-    raise ValueError("Topic selection failed and no fallback topics were available.") from last_error
+    return select_labels(
+        client=client,
+        model=model,
+        prompt=prompt,
+        key="topics",
+        labels=topic_labels,
+        max_choices=max_topics,
+        max_retries=max_retries,
+        description=f"Topic selection question={question[:120]!r}",
+    )
 

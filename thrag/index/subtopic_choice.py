@@ -10,14 +10,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-import json
-import time
 from typing import List, Tuple
 
 import networkx as nx
 from openai import OpenAI
 
 from config import get_config
+from index.label_selection import format_numbered_candidates, select_labels
 from prompt.subtopic_choice import SUBTOPIC_CHOICE_PROMPT
 
 config = get_config()
@@ -26,7 +25,6 @@ SUBTOPIC_CHOICE_MIN = config.subtopic_choice_min
 SUBTOPIC_CHOICE_MAX = config.subtopic_choice_max
 DEFAULT_MODEL = config.default_model
 MAX_RETRIES = config.max_retries
-RETRY_BACKOFF = config.retry_backoff
 
 
 def extract_subtopics_for_topic(graph: nx.Graph, topic_node_id: str) -> List[Tuple[str, str]]:
@@ -58,7 +56,7 @@ def choose_subtopics_for_topic(
     if not subtopics:
         return []
 
-    subtopic_labels = [label for _node_id, label in subtopics if label]
+    subtopic_labels = list(dict.fromkeys(label for _node_id, label in subtopics if label))
     if not subtopic_labels:
         return []
 
@@ -68,40 +66,21 @@ def choose_subtopics_for_topic(
     prompt = (
         SUBTOPIC_CHOICE_PROMPT
         .replace("{{TOPIC_LABEL}}", str(graph.nodes[topic_nid].get("label", "")))
-        .replace("{{SUBTOPIC_LIST}}", json.dumps(subtopic_labels, ensure_ascii=False))
+        .replace("{{SUBTOPIC_LIST}}", format_numbered_candidates(subtopic_labels))
         .replace("{question}", question)
         .replace("{min_subtopics}", str(min_subtopics))
         .replace("{max_subtopics}", str(max_subtopics))
     )
 
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You select relevant subtopics from a fixed list."},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=config.answer_temperature,
-                extra_body=config.llm_extra_body(),
-            )
-            content = response.choices[0].message.content or "{}"
-            payload = json.loads(content)
-            chosen = payload.get("subtopics", [])
-            if not isinstance(chosen, list):
-                raise ValueError("The model response did not contain a list under 'subtopics'.")
-
-            valid = [label for label in subtopic_labels if label in set(chosen)]
-            if valid:
-                return valid[:max_subtopics]
-
-            raise ValueError("The model did not return any valid subtopics.")
-        except Exception as exc:
-            print(f"Subtopic selection attempt {attempt} failed: {exc}")
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_BACKOFF)
-
-    print("Subtopic selection fell back to the first available subtopics.")
-    return subtopic_labels[:max_subtopics]
+    return select_labels(
+        client=client,
+        model=model,
+        prompt=prompt,
+        key="subtopics",
+        labels=subtopic_labels,
+        max_choices=max_subtopics,
+        max_retries=MAX_RETRIES,
+        description=f"Subtopic selection topic={str(graph.nodes[topic_nid].get('label', ''))[:80]!r} "
+                    f"question={question[:120]!r}",
+    )
 

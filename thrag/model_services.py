@@ -78,6 +78,16 @@ def create_chat_client(config: THRAGConfig | None = None) -> OpenAI:
     return OpenAI(api_key=config.llm_api_key, base_url=config.llm_base_url)
 
 
+# The nested question/subtopic pools share one limit for the remote LLM service.
+# Local E5 encoding keeps its existing independent model lock.
+_ANSWER_REQUEST_SLOTS = threading.BoundedSemaphore(get_config().max_workers)
+
+
+def create_answer_completion(client: OpenAI, **kwargs: Any) -> Any:
+    with _ANSWER_REQUEST_SLOTS:
+        return client.chat.completions.create(**kwargs)
+
+
 class CpuE5Encoder:
     """Load local E5 weights and WordPiece files lazily, without CUDA or downloads."""
 

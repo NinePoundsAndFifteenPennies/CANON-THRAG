@@ -17,7 +17,7 @@ from typing import Any
 
 from config import get_config
 from generate.Retriever import Retriever
-from model_services import create_chat_client, get_chat_tokenizer
+from model_services import create_answer_completion, create_chat_client, get_chat_tokenizer
 
 
 class GraphRAG:
@@ -116,7 +116,8 @@ class GraphRAG:
 
         context = self.compose_context(chunk_ids, edges_meta)
         prompt = self.answer_prompt.replace("{{question}}", query).replace("{{context}}", context)
-        response = self.client.chat.completions.create(
+        response = create_answer_completion(
+            self.client,
             model=self.config.chat_model,
             messages=[
                 {"role": "system", "content": self.system_prompt},

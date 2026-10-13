@@ -13,13 +13,12 @@ if str(PROJECT_ROOT) not in sys.path:
 import argparse
 import json
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from tqdm import tqdm
-
 from config import get_config
+from generate.batch_utils import completed_answers, save_answer_checkpoint
 from generate.graph_based_rag_long import GraphRAG
 
 _THREAD_STATE = threading.local()
@@ -40,6 +39,9 @@ def load_questions(input_path: Path) -> list[dict[str, Any]]:
         payload = json.load(handle)
     if not isinstance(payload, list):
         raise ValueError(f"Question file must contain a JSON list: {input_path}")
+    for index, item in enumerate(payload):
+        if not isinstance(item, dict) or not isinstance(item.get("query"), str) or not item["query"].strip():
+            raise ValueError(f"Question {index} must contain a nonempty query string: {input_path}")
     return payload
 
 
@@ -56,8 +58,8 @@ def main(dataset_name: str, force_rebuild: bool = False) -> str:
 
     def process(index: int, item: dict[str, Any]) -> tuple[int, dict[str, Any], list[dict[str, str]]]:
         query = str(item.get("query", "")).strip()
-        rag = get_rag(dataset_name)
         try:
+            rag = get_rag(dataset_name)
             answer_text, elapsed, context_tokens = rag.answer(query=query)
             chunk_log_entries = [
                 {"query": query, "chunk_id": chunk_id}
@@ -76,6 +78,7 @@ def main(dataset_name: str, force_rebuild: bool = False) -> str:
                 },
             }
         except Exception as exc:
+            print(f"Long answer question {index} failed: {type(exc).__name__}: {exc}", flush=True)
             result = {
                 "query": query,
                 "result": f"[Error] {exc}",
@@ -91,19 +94,26 @@ def main(dataset_name: str, force_rebuild: bool = False) -> str:
     chunk_log_path.parent.mkdir(parents=True, exist_ok=True)
 
     log_lines: list[str] = []
+    error_count = 0
     with ThreadPoolExecutor(max_workers=config.max_workers) as executor:
         futures = [executor.submit(process, index, item) for index, item in enumerate(questions)]
         for completed_count, future in enumerate(
-            tqdm(as_completed(futures), total=len(futures), desc="Generating long answers"),
+            completed_answers(futures, description="Generating long answers"),
             start=1,
         ):
             index, result, chunk_log_entries = future.result()
             results[index] = result
+            error_count += int(str(result.get("result", "")).startswith("[Error]"))
             log_lines.extend(json.dumps(entry, ensure_ascii=False) for entry in chunk_log_entries)
 
             if completed_count % 10 == 0 or completed_count == len(futures):
-                with temp_output_path.open("w", encoding="utf-8") as handle:
-                    json.dump(results, handle, indent=2, ensure_ascii=False)
+                save_answer_checkpoint(temp_output_path, results)
+                print(
+                    f"Long-answer checkpoint: completed={completed_count}/{len(questions)}, "
+                    f"successful={completed_count - error_count}, failed={error_count}, "
+                    f"pending={len(questions) - completed_count} (null slots).",
+                    flush=True,
+                )
 
     finalized_results = [item for item in results if item is not None]
     with output_path.open("w", encoding="utf-8") as handle:

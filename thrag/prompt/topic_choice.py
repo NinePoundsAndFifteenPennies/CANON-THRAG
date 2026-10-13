@@ -1,25 +1,26 @@
 TOPIC_CHOICE_PROMPT = """
 Goal:
-Select all topics from the provided list that are directly relevant to the user's question.
-Choose between {min_topics} and {max_topics} topics.
-Return only valid JSON.
+Select the topics from the numbered candidates that are directly relevant to the user's question.
+Choose between {min_topics} and {max_topics} distinct topic IDs.
+Return only one compact JSON object containing integer IDs.
 
 Instructions:
-1. Use only the topics provided in {{TOPIC_LIST}}.
+1. Use only the integer IDs in the allowed candidates below.
 2. Read the question in {{question}}.
-3. Preserve the original topic strings exactly as provided.
+3. Read the labels to make your choice, but return IDs only. Do not copy labels or explain.
 4. If too many topics are relevant, keep the most useful ones.
-5. If very few topics are relevant, still return at least {min_topics} topics by picking the closest matches.
+5. If very few topics are relevant, still return at least {min_topics} IDs by picking the closest matches.
+6. List each ID once. Stop immediately after the closing brace.
 
 Output format:
 {
-  "topics": ["TopicLabel1", "TopicLabel2"]
+  "topics": [1, 2]
 }
 
 Question:
 {{question}}
 
-Allowed topics:
+Allowed topic IDs and labels:
 {{TOPIC_LIST}}
 """
 
