@@ -89,7 +89,7 @@ class THRAGConfig:
         self.embedding_top_k = int(os.getenv("EMBEDDING_TOP_K", "5"))
         self.overretrieve_factor = int(os.getenv("OVERRETRIEVE_FACTOR", "5"))
 
-        # Informational server limit; this does not change chunking or truncate evidence.
+        # Server window used for topic-selection input budgeting.
         self.max_context_length = int(os.getenv("MAX_CONTEXT_LENGTH", "49152"))
 
         self.log_level = os.getenv("LOG_LEVEL", "INFO")

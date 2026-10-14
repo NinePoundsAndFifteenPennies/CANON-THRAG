@@ -12,11 +12,32 @@ from model_services import create_answer_completion
 
 # Selection should not occupy a question worker for ten oversized generations.
 MAX_SELECTION_ATTEMPTS = 3
+SELECTION_SYSTEM_PROMPT = "Select relevant candidate IDs. Return only the required JSON."
+
+
+def selection_output_budget(candidate_count: int, max_choices: int) -> int:
+    return max(128, 32 + max_choices * (len(str(candidate_count)) + 8))
+
+
+def selection_messages(prompt: str) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": SELECTION_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
 
 
 def format_numbered_candidates(labels: list[str]) -> str:
     return json.dumps(
         [{"id": index, "label": label} for index, label in enumerate(labels, start=1)],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def format_compact_candidates(labels: list[str]) -> str:
+    """Represent topic IDs without repeating two field names per candidate."""
+    return json.dumps(
+        {str(index): label for index, label in enumerate(labels, start=1)},
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -60,7 +81,7 @@ def select_labels(
     max_choices = max(1, min(max_choices, len(labels)))
     attempts = max(1, min(max_retries, MAX_SELECTION_ATTEMPTS))
     # Only numbers are returned; output length no longer depends on label length.
-    output_budget = max(128, 32 + max_choices * (len(str(len(labels))) + 8))
+    output_budget = selection_output_budget(len(labels), max_choices)
     schema = {
         "type": "object",
         "properties": {
@@ -91,10 +112,7 @@ def select_labels(
             response = create_answer_completion(
                 selection_client,
                 model=model,
-                messages=[
-                    {"role": "system", "content": "Select relevant candidate IDs. Return only the required JSON."},
-                    {"role": "user", "content": request_prompt},
-                ],
+                messages=selection_messages(request_prompt),
                 response_format={
                     "type": "json_schema",
                     "json_schema": {"name": f"selected_{key}", "strict": True, "schema": schema},

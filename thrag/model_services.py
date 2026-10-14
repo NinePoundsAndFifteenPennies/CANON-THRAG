@@ -58,6 +58,25 @@ class ChatTextTokenizer:
         """Count raw text; API usage also includes message/template overhead."""
         return len(self.encode(text))
 
+    def count_messages(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        chat_template_kwargs: dict[str, Any] | None = None,
+    ) -> int:
+        """Count the chat template and assistant prefix as part of the input."""
+        with self._lock:
+            self._load_tokenizer()
+            token_ids = self._tokenizer.apply_chat_template(
+                messages,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=False,
+                truncation=False,
+                **(chat_template_kwargs or {}),
+            )
+        return len(token_ids)
+
 
 _CHAT_TOKENIZERS: dict[str, ChatTextTokenizer] = {}
 _CHAT_TOKENIZERS_LOCK = threading.Lock()
