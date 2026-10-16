@@ -17,7 +17,14 @@ from prompt.answer_short import ANSWER_PROMPT
 
 SHORT_SYSTEM_PROMPT = (
     "You answer multi-hop questions using only the supplied graph evidence. "
-    "Keep the answer concise and do not invent facts."
+    "Output only the final short answer on one line. "
+    "For yes/no questions, output exactly yes or no in lowercase. "
+    "For factual questions, output only the requested name, date, number, or "
+    "shortest complete phrase, preserving complete proper names and required units. "
+    "Never include explanations, reasoning, citations, background, or an answer prefix, "
+    "even for questions requiring comparison or inference across documents. "
+    "If the evidence is insufficient, output exactly Insufficient information. "
+    "Do not invent facts."
 )
 
 
