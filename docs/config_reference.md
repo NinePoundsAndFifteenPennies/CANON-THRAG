@@ -36,7 +36,7 @@
 | `ANSWER_MAX_TOKENS` | 长答直接使用；短答实际使用 `max(64, min(256, value))`。 |
 | `EVAL_TEMPERATURE` | 仅 pairwise LLM judge 的温度。 |
 
-主题选择、子主题选择和 pairwise judge 未显式传 `max_tokens`，不受上述两个输出预算控制。抽取数量规则及其来源见 [抽取差异](resource_audit.md#extraction)。
+主题/子主题选择使用独立的候选 ID 输出预算，不受上述两个输出预算控制；pairwise judge 未显式设置该输出上限。抽取数量规则及其来源见 [抽取差异](resource_audit.md#extraction)。
 
 调用依据：[`graph_construction.py`](../thrag/index/graph_construction.py)、[短答封装](../thrag/generate/graph_based_rag_short.py)、[长答封装](../thrag/generate/graph_based_rag_long.py)、[主题选择](../thrag/index/topic_choice.py)、[子主题选择](../thrag/index/subtopic_choice.py)、[pairwise judge](../thrag/evaluate/judge_Ultradomain.py)。
 
@@ -67,7 +67,7 @@ E5 通过 Sentence-Transformers 仅在 CPU 本地加载。query 加 `query: `，
 | `TOP_K1_LONG`、`TOP_K2_LONG` | 长答对应的检索上限。 |
 | `EMBEDDING_TOP_K` | 底层 `EdgeEmbedderFAISS.search()` 未指定 `top_k` 时的默认值；主流程显式传 K1，因此通常不会用到。 |
 | `OVERRETRIEVE_FACTOR` | 有 entity filter 时的全局预召回倍率；无 filter 时不使用。 |
-| `MAX_CONTEXT_LENGTH` | 仅作为服务窗口元数据，并由配置自检展示；不检查请求长度、不裁剪证据，也不修改 vLLM 启动设置。 |
+| `MAX_CONTEXT_LENGTH` | 主题选择计入聊天模板、输出预留及安全余量；超长候选先压缩再分批选择。CANON 联合选择也使用它检查输入预算；不修改 vLLM 启动设置，不自动裁剪最终回答上下文。 |
 
 候选过滤、失败回退、K2 去重扫描与来源映射的具体语义集中在 [实现差异](resource_audit.md#retrieval)。
 
@@ -76,15 +76,15 @@ E5 通过 Sentence-Transformers 仅在 CPU 本地加载。query 加 `query: `，
 
 | 配置 | 实际作用与限制 |
 |---|---|
-| `MAX_WORKERS` | 每个线程池的线程上限，作用于抽取、问答外层、每题子主题选择内层和 pairwise judge；不是全局 HTTP 并发上限。 |
-| `MAX_RETRIES` | 主题/子主题选择的最多尝试次数，含首轮；不配置 SDK 的 HTTP 重试。 |
-| `RETRY_BACKOFF` | 仅子主题选择失败尝试之间的固定等待秒数；主题选择不等待。 |
+| `MAX_WORKERS` | 线程池上限；经 `create_answer_completion` 的主题/子主题选择和回答还共享进程内请求信号量。抽取和独立 judge 的请求不由该信号量统一协调。 |
+| `MAX_RETRIES` | 主题/子主题选择的尝试次数（含首轮），另受选择器内部有限上限约束；选择器关闭 SDK 重试以避免预算相乘。 |
+| `RETRY_BACKOFF` | 选择器失败尝试之间的指数退避起点。 |
 
-一次问答先选择主题，再为各主题并行选择子主题，最后生成答案。外层最多同时处理 W 道题，每题内层最多 `min(W, 实际选中主题数)` 个请求；例如 W=10 且每题选中 10 个主题，客户端正常在途请求峰值可达 100。抽取和 pairwise judge 只有一层线程池，各自最多 W 个请求。pipeline 的阶段依次执行；另开多个进程会叠加负载。
+一次问答先选择主题，再为各主题并行选择子主题，最后生成答案。虽然外层和内层线程池嵌套，但当前问答请求经共享信号量限流，不应再将两个线程数相乘当作正常在途 HTTP 请求数。抽取和 pairwise judge 只有一层线程池。pipeline 阶段依次执行；另开多个进程会叠加负载。
 
-当前没有全局 HTTP semaphore、请求速率限制或服务负载自适应。每个问答线程独立加载图与 FAISS，影响 pipeline 所在机器的内存；E5 encoder 则在进程内共享，并用锁串行执行 encode。降低 W 会同时降低两层并发，例如 W=2 时问答正常峰值约为 4。代码依据：[问答外层](../thrag/generate/answer_generation_short.py)、[子主题内层](../thrag/generate/Retriever.py)、[共享 encoder](../thrag/model_services.py)。
+当前没有跨进程请求限流或服务负载自适应。原入口每个问答线程独立加载图与 FAISS；CANON 入口在进程内共享只读证据、图和向量，每个回答线程单独保存本题状态。E5 encoder 继续共享并用锁串行 encode。代码依据：[问答外层](../thrag/generate/answer_generation_short.py)、[子主题内层](../thrag/generate/Retriever.py)、[模型服务](../thrag/model_services.py)。
 
-主题选择的 API 调用在自定义 `try` 外，因此该层主要重试 JSON/标签校验失败，不捕获 API 调用异常；子主题选择则把 API 调用放在 `try` 内。抽取、回答和 judge 没有接入这组自定义重试参数。客户端构造只传 `api_key/base_url`，HTTP 超时和底层重试仍使用 SDK 自身默认设置。
+当前主题与子主题选择复用带 JSON Schema 的有界 ID 选择器；暂时性 API 错误和响应校验失败可重试，永久性 API 错误直接上报。抽取、最终回答和 judge 没有接入这组选择器重试参数，继续沿用其 SDK 默认超时及重试行为。
 
 客户端线程数与 vLLM 的调度并发无需相等。过大的负载可能排队、增加延迟、触发重算或服务拒绝；容量取决于 GPU、KV cache、请求长度和服务启动参数，不能由单请求上下文窗口推算。[vLLM 调优说明](https://docs.vllm.ai/en/latest/configuration/optimization/)、[调度参数](https://docs.vllm.ai/en/latest/configuration/engine_args/#schedulerconfig)。
 
@@ -97,3 +97,36 @@ E5 通过 Sentence-Transformers 仅在 CPU 本地加载。query 加 `query: `，
 | `BATCH_SIZE` | 只读取，没有用于运行批量；E5 使用自身的批量配置。 |
 | `TIMEOUT_SECONDS` | 只读取，没有传给 API 客户端。 |
 | `ENABLE_CACHE`、`CACHE_TTL` | 只读取，不控制缓存复用或 TTL 清理。实际缓存规则及强制重建步骤见 [迁移与重建](../thrag/SETUP_GUIDE.md#migration)。 |
+
+<a id="canon"></a>
+## CANON 独立模块配置
+
+实现为 [canon/core/config.py](../thrag/canon/core/config.py)。这些变量只被新入口读取，不影响原 pipeline；优先级为新入口显式 CLI 开关、选定任务清单中的方法配置、进程环境、`.env`、代码默认值。可复制初值只维护在 [配置模板](../thrag/.env.example)。CLI 和缓存操作见 [服务器说明](../thrag/SETUP_GUIDE.md#canon)。
+
+| 配置 | 作用 |
+|---|---|
+| `CANON_HIERARCHY` | `none`、`split`、`split_merge`；关闭规范化不关闭其他模块。 |
+| `CANON_SOFT_LINKS` | 构建软连接；只有 A/融合路由使用它传播，B/原选择器不读软边分数。 |
+| `CANON_ROUTING` | `baseline`、`a`、`b`、`hybrid`；`baseline` 仅指复用原选择器，不代表作者源码实验版本。 |
+| `CANON_BRIDGE`、`CANON_BALANCE` | 分别开启桥梁接力加权和分支均衡分配。 |
+| `CANON_MERGE_NEIGHBORS` | 每个标签召回的近邻数量；子主题硬合并只在相同 canonical 父主题组内召回。 |
+| `CANON_MERGE_LABEL_THRESHOLD`、`CANON_MERGE_CONTEXT_THRESHOLD` | 硬合并须同时满足的标签及上下文门槛；检查所有跨簇原始成员对。 |
+| `CANON_SENTENCE_PROTOTYPE_WEIGHT` | 上下文相似度中句子原型的权重；其余质量分给实体名称原型。 |
+| `CANON_SOFT_LABEL_THRESHOLD`、`CANON_SOFT_CONTEXT_THRESHOLD` | 软边标签及上下文门槛；Subtopic 还检查父主题相容性。 |
+| `CANON_SOFT_NEIGHBORS` | 每节点最多保留的互选软邻居数量。 |
+| `CANON_SOFT_TRANSITION_WEIGHT` | 扩散时软边关系组相对其他关系组的质量；为零时软边不传播。 |
+| `CANON_SEED_SENTENCES`、`CANON_SEED_LABELS` | A 的底层种子句数量、每种层级节点的标签种子数量。 |
+| `CANON_BOTTOM_UP_WEIGHT` | 底层种子的混合权重；余下质量用于顶层种子，再均分给 Topic/Subtopic。 |
+| `CANON_RESTART` | 每轮重新注入初始查询种子的质量比例。 |
+| `CANON_DIFFUSION_ITERATIONS`、`CANON_DIFFUSION_TOLERANCE` | 迭代上限与全体节点分数的 L1 停止门槛；记录未收敛截断状态。 |
+| `CANON_ACTIVATION_LABEL_WEIGHT`、`CANON_ACTIVATION_TOP_N` | B 的标签/证据混合权重和证据 Top-n 均值窗口；融合版候选排名来自 A。 |
+| `CANON_CANDIDATE_TOPICS`、`CANON_CANDIDATE_SUBTOPICS` | B/融合的主题、每主题子主题候选上限；零表示相应原选择上限的两倍，提示词预算可能进一步缩减。 |
+| `CANON_PREVIEW_INPUT_TOKENS` | 联合选择输入预算，还受服务窗口扣除输出预算和余量后的限制。 |
+| `CANON_PREVIEW_SENTENCE_TOKENS`、`CANON_PREVIEW_ENTITIES` | 每张卡片的证据片段 token 上限及实体预览数。 |
+| `CANON_ROUTE_ATTEMPTS` | 联合选择总尝试次数（含首轮），还受 `MAX_RETRIES` 限制。正常完成只需一次请求。 |
+| `CANON_BRIDGE_SEED_SENTENCES`、`CANON_BRIDGE_WEIGHT` | 桥梁候选的高分句数量和加权强度；只传播一次，不扩大路由子图。 |
+| `CANON_COVERAGE_WEIGHT` | chunk 选择中分支覆盖边际收益的权重。 |
+
+A/B/融合的最终主题、每主题子主题数量上限复用现有 `*_CHOICE_MAX`，不强制补足原提示词的最小选择数；`baseline` 路由沿用原选择器行为。K1/K2 按短答/长答配置读取；`retrieve` 阶段使用短答预算，并要求 `1 <= K2 <= K1`。
+
+新入口不使用 `OVERRETRIEVE_FACTOR`，因为它在实体候选池内部精确排序。API usage 缺失时记录 null，不伪造为零；调用计数是客户端 `create()` 次数，最终回答 SDK 内部重试不属于额外可观测调用。模型服务在同一个 ID 下更换权重无法从 ID 自动识别，需主动重新运行对应结果。

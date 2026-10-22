@@ -197,3 +197,6 @@ python -m pytest -q
 | Existing outputs skipped | [Reuse and rebuild rules](#migration) |
 | FAISS input missing or wrong dimension | Graph-building stages and [embedding requirements](../docs/config_reference.md#tokenization) |
 | Slow requests, queueing, or timeouts | [Concurrency and retry behavior](../docs/config_reference.md#concurrency); inspect server capacity before increasing parallelism |
+
+<a id="canon"></a>
+CANON 增强版的运行与消融命令见 [包内运行指南](canon/USAGE.md)。

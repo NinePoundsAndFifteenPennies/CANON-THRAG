@@ -33,8 +33,12 @@ class GraphRAG:
         default_top_k2: int,
         temperature: float,
         max_output_tokens: int,
+        retriever: Any = None,
+        client: Any = None,
+        config: Any = None,
+        chunk_map: dict[str, str] | None = None,
     ) -> None:
-        self.config = get_config(dataset_name)
+        self.config = config if config is not None else get_config(dataset_name)
         self.dataset_name = dataset_name
         self.answer_prompt = answer_prompt
         self.system_prompt = system_prompt
@@ -43,9 +47,9 @@ class GraphRAG:
         self.temperature = temperature
         self.max_output_tokens = max_output_tokens
 
-        self.client = create_chat_client(self.config)
-        self.chunk_map = self._load_chunk_map(self.config.get_kv_store_file())
-        self.retriever = Retriever(
+        self.client = client if client is not None else create_chat_client(self.config)
+        self.chunk_map = chunk_map if chunk_map is not None else self._load_chunk_map(self.config.get_kv_store_file())
+        self.retriever = retriever if retriever is not None else Retriever(
             gexf_path=str(self.config.get_graph_gexf_file()),
             json_path=str(self.config.get_graph_json_file()),
             kv_json_path=str(self.config.get_kv_store_file()),
@@ -57,6 +61,7 @@ class GraphRAG:
         )
         self.last_chunk_ids: list[str] = []
         self.all_sentence_chunk_ids: list[str] = []
+        self.last_retrieval: dict[str, Any] = {}
 
     @staticmethod
     def _load_chunk_map(path: Path) -> dict[str, str]:
@@ -96,6 +101,7 @@ class GraphRAG:
 
         started_at = time.time()
         retrieval = self.retriever.retrieve(query, top_k1=top_k1, top_k2=top_k2)
+        self.last_retrieval = retrieval
         elapsed = time.time() - started_at
 
         chunk_ids = retrieval.get("chunks", [])
@@ -105,10 +111,10 @@ class GraphRAG:
         sentence_chunk_ids: list[str] = []
         seen_chunk_ids: set[str] = set()
         for edge in edges_meta:
-            chunk_id = edge.get("chunk_id")
-            if isinstance(chunk_id, str) and chunk_id and chunk_id not in seen_chunk_ids:
-                seen_chunk_ids.add(chunk_id)
-                sentence_chunk_ids.append(chunk_id)
+            for chunk_id in edge.get("chunk_ids", [edge.get("chunk_id")]):
+                if isinstance(chunk_id, str) and chunk_id and chunk_id not in seen_chunk_ids:
+                    seen_chunk_ids.add(chunk_id)
+                    sentence_chunk_ids.append(chunk_id)
         self.all_sentence_chunk_ids = sentence_chunk_ids
 
         if not chunk_ids:

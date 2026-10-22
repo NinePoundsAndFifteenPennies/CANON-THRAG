@@ -54,3 +54,6 @@ Stage aliases:
 The code uses English comments and console messages. Runtime instructions,
 input/output layouts, and troubleshooting are maintained only in the
 [setup guide](SETUP_GUIDE.md).
+
+<a id="canon"></a>
+CANON 增强版的中文说明见 [包内文档](canon/README.md)。
