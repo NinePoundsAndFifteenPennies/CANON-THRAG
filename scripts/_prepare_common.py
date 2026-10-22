@@ -148,10 +148,13 @@ def write_outputs(
     metadata: list[dict[str, Any]],
     *,
     force: bool,
+    expected_records: int = SAMPLE_SIZE,
 ) -> dict[str, str]:
     """Serialize all three files before replacing their destination files."""
-    if len(qa) != SAMPLE_SIZE or len(metadata) != SAMPLE_SIZE:
-        raise PreparationError(f"qa and metadata must each contain exactly {SAMPLE_SIZE} rows")
+    if len(qa) != expected_records or len(metadata) != expected_records:
+        raise PreparationError(
+            f"qa and metadata must each contain exactly {expected_records} rows"
+        )
     for index, (question, details) in enumerate(zip(qa, metadata)):
         if set(question) != {"query", "answer"}:
             raise PreparationError(f"QA record {index} must contain only query and answer")

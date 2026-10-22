@@ -1,6 +1,6 @@
 # CANON-THRAG 项目上下文与进度
 
-更新：2026-10-12（Asia/Shanghai）。本文件是唯一进度入口；文档职责见 [导航](README.md#documents)。
+更新：2026-10-18（Asia/Shanghai）。本文件是唯一进度入口；文档职责见 [导航](README.md#documents)。
 
 ## 目标与范围
 
@@ -12,6 +12,7 @@
 - 模型适配已改为用户部署的 Qwen3.5-9B，本版采用非思考模式；抽取协议调整和分词器切换已完成本地修改并推送。部署参数的唯一文档来源是 [配置模板](thrag/.env.example)，行为说明见 [配置参考](docs/config_reference.md)。
 - 抽取已统一为每 chunk 至多 110 条三元组，使用请求级 JSON Schema 与严格落盘校验；首轮失败按 dataset 记录并继续其他 chunk。独立修复入口为 [repair_graph.py](thrag/index/repair_graph.py)，沿用原 KV 身份合并；pipeline 在抽取后及后续阶段前检查失败，自动修复一次，未解决则停止并保留成功结果与剩余记录。已移除新增的请求级显式超时，正常抽取与修复均恢复使用原 SDK 默认超时。断点进度只由 KV 与 graph 判断，与 fail 逻辑完全分离：不带 `--force` 时保留非连续合法块、只补缺块并从落盘数量继续进度；带 `--force` 时所有选定阶段从头重建。续建加载原 fail 状态且不做对账、筛选或补写，之后仍只在成功时移除对应条目、失败时更新对应条目。
 - 配置生效范围与并发问题已经静态核对；详细结论只在配置参考维护，尚未实施并发结构或遗留配置清理。
+- UltraDomain 四个子集的原始数据与 TH-RAG 输入文件已就绪，并通过源数据一致性检查；尚未建图、生成答案或做任何评测。
 - 核心改进模块尚未实现；正式问题 IDs、预算与复现协议仍需固定。
 
 <a id="validation"></a>
@@ -30,16 +31,17 @@
 <a id="data"></a>
 ## 数据准备状态
 
-- MultiHop：`contexts.txt` 约 4.7 MB，含 440 篇去重 corpus 文档。原始抽样 1,000 条 QA 保存在 `qa_all.json`；正式 `qa.json` 与 `metadata.json` 已同步筛为 881 条有 evidence 的问题。
-- 119 条 `null_query` 的 evidence 为空，答案为 `Insufficient information.`，不进入当前正式回答与评测。
+- MultiHop：`contexts.txt` 约 4.7 MB，含 440 篇去重 corpus 文档；当前可直接运行的 `qa.json` 与 `metadata.json` 已恢复为完整 1,000 条，119 条 `null_query` 的答案保留为 `Insufficient information.`。此前的 881 条版本保存在 `contexts881.txt`、`qa881.json` 和 `metadata881.json`，`qa_all.json` 仍保留为原始 QA 备份。
+- 1,000 条版本的 `metadata.json` 与 `qa.json` 顺序完全对应；119 条 `null_query` 的 evidence 为空并标记为 preparation issue，但其答案可用于判断模型是否正确回答 `Insufficient information.`。
 - HotpotQA：1,000 条抽样已检查，无空答案、空 supporting facts 或不完整 supporting fact。
+- UltraDomain：原始 JSONL 位于 `/data/panzheng/canon-thrag/datasets/UltraDomain/`（Agriculture、CS、Legal、Mix 四份），来自 Hugging Face `TommyChien/UltraDomain`（dataset commit `aa8a51d523f8fc3c5a0ab90dd16b7f6b9dbb5d0d`，apache-2.0）。已生成可直接运行的 `/data/panzheng/canon-thrag/data/ultradomain_agriculture`、`ultradomain_cs`、`ultradomain_legal`、`ultradomain_mix`：每个域固定 100 条 QA。Agri/CS 源文件恰好 100 条，保留全部记录和文件顺序；Legal 从 438 条、Mix 从 130 条中用 seed 42 无放回抽样。`contexts.txt` 写入各域全部 released 文档，去重后为 12/10/94/61 篇；Agri/CS 的 `context_id` 完整，四个子集的源 `length` 合计为 1,949,526/2,047,866/4,773,793/611,161，与 Table 1 的 1.9M/2.0M/4.7M/602K 一致。统一采用 100 题/域，不采用论文每域 125 题。Legal 源文件有 11 组重复问题（23 条），seed 42 样本含其中 1 组 2 条，已保留并在 metadata 标记。
 
 转换算法、metadata 字段和脚本命令仅在 [数据脚本说明](scripts/README.md)维护；运行目录及产物布局见 [服务器说明](thrag/SETUP_GUIDE.md#dataset)。
 
 ## 待解决与下一步
 
 1. 确认服务可承受的并发，决定是否处理 [配置参考中的并发与重试问题](docs/config_reference.md#concurrency)。
-2. 固定正式问题 IDs、预算和论文忠实/公开代码协议，补齐 [实现审计列出的评测能力缺口](docs/resource_audit.md)，启动 baseline。
+2. 固定正式问题 IDs、预算和论文忠实/公开代码协议，补齐 [实现审计列出的评测能力缺口](docs/resource_audit.md)，启动 baseline。UltraDomain 已固定每域 100 条（Agri/CS 全量，Legal/Mix 以 seed 42 抽样），协议中需注明与论文每域 125 条的差异；Legal 样本中重复问题的评测处理也需固定。
 3. 依 [实验设计](docs/idea_digest.md#validation)实现并验证两个核心模块；M、合并阈值在开发/验证集选择，成功后补扩展实验。
 
 ## 仓库与会话约束
