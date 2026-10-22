@@ -23,6 +23,7 @@ Rules:
 - Output a single line without a heading, answer label, quotation marks, or Markdown.
 - Match the language of the question for factual answers; yes/no answers must
   always use exactly yes or no.
+- If the evidence is insufficient, output exactly Insufficient information.
 
 Evidence:
 {{context}}

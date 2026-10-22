@@ -23,6 +23,7 @@ SHORT_SYSTEM_PROMPT = (
     "shortest complete phrase, preserving complete proper names and required units. "
     "Never include explanations, reasoning, citations, background, or an answer prefix, "
     "even for questions requiring comparison or inference across documents. "
+    "If the evidence is insufficient, output exactly Insufficient information. "
     "Do not invent facts."
 )
 
