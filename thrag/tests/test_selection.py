@@ -86,7 +86,9 @@ def test_subtopic_ids_are_scoped_to_the_selected_topic(client) -> None:
     graph.add_edges_from([("t1", "s1"), ("t1", "s2"), ("t2", "s3")])
     client.chat.completions.create.return_value = completion('{"subtopics": [2]}')
 
-    assert choose_subtopics_for_topic("Question", "t1", graph, client, min_subtopics=1, max_subtopics=2) == ["Second"]
+    assert choose_subtopics_for_topic(
+        question="Question", topic_nid="t1", graph=graph, client=client, min_subtopics=1, max_subtopics=2,
+    ) == ["Second"]
     request = client.chat.completions.create.call_args.kwargs
     assert request["response_format"]["json_schema"]["schema"]["properties"]["subtopics"]["items"]["enum"] == [1, 2]
 
@@ -177,7 +179,8 @@ def test_oversized_topics_are_all_evaluated_in_budgeted_batches(client) -> None:
     config = topic_choice.get_config()
     config.max_context_length = 1200
     graph = nx.Graph()
-    labels = [f"Topic {index} " + "description " * 8 for index in range(120)]
+    # Graph labels are normalised with .strip() during extraction.
+    labels = [(f"Topic {index} " + "description " * 8).strip() for index in range(120)]
     for index, label in enumerate(labels):
         graph.add_node(str(index), type="topic", label=label)
     seen: set[str] = set()

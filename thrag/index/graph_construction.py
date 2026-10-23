@@ -27,7 +27,12 @@ from tqdm import tqdm
 
 from config import THRAGConfig, get_config
 from model_services import create_chat_client, get_chat_tokenizer
-from prompt.extract_graph import EXTRACTION_PROMPT, MAX_TRIPLES, SYSTEM_PROMPT, TRIPLES_SCHEMA
+from prompt.extract_graph import (
+    MAX_TRIPLES,
+    build_extraction_prompt,
+    build_system_prompt,
+    build_triples_schema,
+)
 
 
 def chunk_text(text: str, max_tokens: int, overlap: int, tokenizer_path: str) -> list[str]:
@@ -66,7 +71,7 @@ class ExtractionResponseError(ValueError):
         self.response_text = response_text
 
 
-def validate_triples_payload(payload: Any) -> list[dict[str, Any]]:
+def validate_triples_payload(payload: Any, max_triples: int = MAX_TRIPLES) -> list[dict[str, Any]]:
     """Validate every field of the extraction schema without dropping entries."""
 
     def require_keys(value: Any, keys: set[str], location: str) -> None:
@@ -81,8 +86,8 @@ def validate_triples_payload(payload: Any) -> list[dict[str, Any]]:
     triples = payload["triples"]
     if not isinstance(triples, list):
         raise ValueError("triples: expected an array")
-    if len(triples) > MAX_TRIPLES:
-        raise ValueError(f"triples: got {len(triples)} items; maximum is {MAX_TRIPLES}")
+    if len(triples) > max_triples:
+        raise ValueError(f"triples: got {len(triples)} items; maximum is {max_triples}")
     for index, item in enumerate(triples):
         location = f"triples[{index}]"
         require_keys(item, {"triple", "sentence", "subject", "object"}, location)
@@ -100,10 +105,10 @@ def validate_triples_payload(payload: Any) -> list[dict[str, Any]]:
     return triples
 
 
-def parse_triples_response(response_text: str) -> list[dict[str, Any]]:
+def parse_triples_response(response_text: str, max_triples: int = MAX_TRIPLES) -> list[dict[str, Any]]:
     """Accept only the complete JSON object required by the request schema."""
 
-    return validate_triples_payload(json.loads(response_text))
+    return validate_triples_payload(json.loads(response_text), max_triples)
 
 
 def validate_block(block: Any) -> None:
@@ -194,15 +199,16 @@ def call_model(
     chunk_text_value: str,
     chunk_id: str,
     config: THRAGConfig | None = None,
+    max_triples: int = MAX_TRIPLES,
 ) -> dict[str, Any]:
-    prompt = EXTRACTION_PROMPT.replace("{{document}}", chunk_text_value.strip())
     config = config or get_config()
+    prompt = build_extraction_prompt(chunk_text_value.strip(), max_triples)
     response = client.chat.completions.create(
         model=model_name,
         messages=[
             {
                 "role": "system",
-                "content": SYSTEM_PROMPT,
+                "content": build_system_prompt(max_triples),
             },
             {"role": "user", "content": prompt},
         ],
@@ -210,7 +216,7 @@ def call_model(
         max_tokens=config.max_tokens_response,
         response_format={
             "type": "json_schema",
-            "json_schema": {"name": "chunk_triples", "strict": True, "schema": TRIPLES_SCHEMA},
+            "json_schema": {"name": "chunk_triples", "strict": True, "schema": build_triples_schema(max_triples)},
         },
         extra_body=config.llm_extra_body(),
     )
@@ -235,7 +241,7 @@ def call_model(
             f"{chunk_id}: triple extraction returned empty content", "EmptyResponse", finish_reason, content,
         )
     try:
-        triples = parse_triples_response(content)
+        triples = parse_triples_response(content, max_triples)
     except (json.JSONDecodeError, ValueError) as exc:
         error_type = "JSONDecodeError" if isinstance(exc, json.JSONDecodeError) else "SchemaValidationError"
         raise ExtractionResponseError(str(exc), error_type, finish_reason, content) from exc

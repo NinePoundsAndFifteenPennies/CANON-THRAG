@@ -1,3 +1,10 @@
+"""Triple-extraction prompt and response schema."""
+
+from __future__ import annotations
+
+import copy
+from typing import Any
+
 MAX_TRIPLES = 110
 
 TRIPLES_SCHEMA = {
@@ -40,13 +47,15 @@ TRIPLES_SCHEMA = {
     },
 }
 
-SYSTEM_PROMPT = f"""You are an information extraction system.
+_SYSTEM_PROMPT_TEMPLATE = """You are an information extraction system.
 Return only a complete JSON object matching the supplied schema.
-Extract at most {MAX_TRIPLES} triples per chunk; an empty triples array is valid.
+Extract at most {{max_triples}} triples per chunk; an empty triples array is valid.
 Every fact must be supported by the input document, and sentence must contain
 the original text supporting that fact. Do not invent facts."""
 
-EXTRACTION_PROMPT = """
+SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace("{{max_triples}}", str(MAX_TRIPLES))
+
+_EXTRACTION_PROMPT_TEMPLATE = """
 You are an information extraction system.
 
 Goal:
@@ -119,4 +128,30 @@ Example JSON output:
 
 Input document:
 {{document}}
-""".replace("{{max_triples}}", str(MAX_TRIPLES))
+"""
+
+EXTRACTION_PROMPT = _EXTRACTION_PROMPT_TEMPLATE.replace("{{max_triples}}", str(MAX_TRIPLES))
+
+
+def build_system_prompt(max_triples: int = MAX_TRIPLES) -> str:
+    """Return the system prompt with an explicit triple cap."""
+
+    return _SYSTEM_PROMPT_TEMPLATE.replace("{{max_triples}}", str(max_triples))
+
+
+def build_extraction_prompt(document: str, max_triples: int = MAX_TRIPLES) -> str:
+    """Return the user prompt for one document with an explicit triple cap."""
+
+    return (
+        _EXTRACTION_PROMPT_TEMPLATE
+        .replace("{{max_triples}}", str(max_triples))
+        .replace("{{document}}", document)
+    )
+
+
+def build_triples_schema(max_triples: int = MAX_TRIPLES) -> dict[str, Any]:
+    """Return the strict response schema with an explicit triple cap."""
+
+    schema = copy.deepcopy(TRIPLES_SCHEMA)
+    schema["properties"]["triples"]["maxItems"] = max_triples
+    return schema
