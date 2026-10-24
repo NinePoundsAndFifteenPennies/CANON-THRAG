@@ -12,29 +12,20 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config import get_config
 from generate.graph_rag import GraphRAG as BaseGraphRAG
-from prompt.answer_short import ANSWER_PROMPT
-
-
-SHORT_SYSTEM_PROMPT = (
-    "You answer multi-hop questions using only the supplied graph evidence. "
-    "Output only the final short answer on one line. "
-    "For yes/no questions, output exactly yes or no in lowercase. "
-    "For factual questions, output only the requested name, date, number, or "
-    "shortest complete phrase, preserving complete proper names and required units. "
-    "Never include explanations, reasoning, citations, background, or an answer prefix, "
-    "even for questions requiring comparison or inference across documents. "
-    "If the evidence is insufficient, output exactly Insufficient information. "
-    "Do not invent facts."
-)
+from generate.short_prompt import ShortAnswerPrompt, load_short_prompt
+from prompt.answer_short import ANSWER_PROMPT, SHORT_SYSTEM_PROMPT
 
 
 class GraphRAG(BaseGraphRAG):
-    def __init__(self, dataset_name: str) -> None:
+    def __init__(
+        self, dataset_name: str, *, short_prompt: ShortAnswerPrompt | str | Path | None = None,
+    ) -> None:
+        self.short_prompt = load_short_prompt(short_prompt)
         config = get_config(dataset_name)
         super().__init__(
             dataset_name=dataset_name,
-            answer_prompt=ANSWER_PROMPT,
-            system_prompt=SHORT_SYSTEM_PROMPT,
+            answer_prompt=self.short_prompt.answer_prompt,
+            system_prompt=self.short_prompt.system_prompt,
             default_top_k1=config.top_k1,
             default_top_k2=config.top_k2,
             temperature=0.0,

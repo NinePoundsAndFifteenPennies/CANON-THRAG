@@ -28,7 +28,20 @@ python -m canon.pipeline --dataset my_dataset --hierarchy split_merge --soft-lin
 
 这条命令使用增强版完整来源关联和精确子图检索，并叠加层次规范化、融合路由、桥梁与均衡选择。需要的派生产物会按当前配置准备或复用。
 
-单独使用 A 或 B 时，保留上面其余参数，只把 `--routing hybrid` 改为 `--routing a` 或 `--routing b`。最终答案生成继续复用原短答/长答提示词。
+单独使用 A 或 B 时，保留上面其余参数，只把 `--routing hybrid` 改为 `--routing a` 或 `--routing b`。
+
+<a id="short-prompt"></a>
+### 指定短答提示词
+
+用 `--short-prompt FILE.py` 手动选择短答模板，可与模块开关一起使用：
+
+```bash
+python -m canon.pipeline --dataset my_dataset --hierarchy split_merge --soft-links on --routing hybrid --bridge on --balance on --steps generate_short --short-prompt prompt/answer_short.py
+```
+
+模板变量、默认文件、路径规则和源码注释的写法见 [短答模板说明](../SETUP_GUIDE.md#short-prompt)。参数用于 `generate_short`；同一命令包含多个生成阶段时，模板选择仅作用于短答。模板在运行开始时加载并校验。
+
+`manifest.json` 的 `identity.short_prompt` 保存模板来源、源文件与实际文本指纹，以及实际使用的用户/系统提示文本。逐题检查点和 `answers.json` 在 `meta.short_prompt` 记录来源与指纹。所选模板计入运行指纹，供运行目录与逐题断点校验使用。
 
 | 运行阶段 | 用途 |
 |---|---|
@@ -66,10 +79,10 @@ python -m canon.pipeline --dataset my_dataset --hierarchy none --soft-links off 
 先生成任务清单，不执行任何实验：
 
 ```bash
-python -m canon.ablations --dataset my_dataset --matrix core --output /absolute/path/core_tasks.json
+python -m canon.ablations --dataset my_dataset --matrix core --output /absolute/path/core_tasks.json --short-prompt prompt/answer_short.py
 ```
 
-矩阵可选 `core`、`routing`、`hierarchy`、`allocation`。任务的 `environment` 保存当时的方法配置，部署和模型服务配置仍取自服务器环境。
+矩阵可选 `core`、`routing`、`hierarchy`、`allocation`。任务的 `environment` 保存当时的方法配置，部署和模型服务配置取自服务器环境。任务清单的 `short_prompt` 与 `short_prompt_identity` 保存选定模板及其指纹，任务命令携带 `--short-prompt`。
 
 选中一个任务后再运行：
 
@@ -77,7 +90,7 @@ python -m canon.ablations --dataset my_dataset --matrix core --output /absolute/
 python -m canon.pipeline --dataset my_dataset --task-file /absolute/path/core_tasks.json --task h1_r1_e1 --steps generate_short
 ```
 
-显式 CLI 模块开关优先于任务配置。该入口不自动运行作者对照、不比较实验结果、不生成修复贡献报告或评测指标。
+执行任务时会读取清单中的短答模板，并校验其有效文本指纹。可显式传 `--short-prompt FILE.py` 指定本次任务的模板；本次选择会写入运行记录。显式 CLI 模块开关优先于任务配置。该入口不自动运行作者对照、不比较实验结果、不生成修复贡献报告或评测指标。
 
 <a id="outputs"></a>
 ## 5. 产物、缓存与续跑

@@ -15,6 +15,7 @@ from typing import Any
 
 from config import get_config
 from model_services import create_chat_client, get_cpu_e5_encoder
+from generate.short_prompt import ShortAnswerPrompt, add_short_prompt_argument, load_short_prompt
 from canon.core.artifacts import PreparedArtifacts, artifact_lock, dependency_versions, model_fingerprint, prepare_artifacts, source_fingerprint
 from canon.core.config import CanonConfig, parse_bool
 from canon.core.io import atomic_json, atomic_jsonl, digest, file_digest, read_json
@@ -90,12 +91,15 @@ def load_questions(runtime: Any, indices: list[int] | None, limit: int | None) -
     return questions, qa_hash
 
 
-def make_answerer(runtime: Any, prepared: PreparedArtifacts, retriever: CanonRetriever, client: Any, stage: str) -> Any:
+def make_answerer(
+    runtime: Any, prepared: PreparedArtifacts, retriever: CanonRetriever, client: Any, stage: str,
+    short_prompt: ShortAnswerPrompt | None = None,
+) -> Any:
     from generate.graph_rag import GraphRAG
 
     if stage == "generate_short":
-        from generate.graph_based_rag_short import SHORT_SYSTEM_PROMPT as system
-        from prompt.answer_short import ANSWER_PROMPT as prompt
+        selected = load_short_prompt(short_prompt)
+        system, prompt = selected.system_prompt, selected.answer_prompt
         k1, k2, temperature = runtime.top_k1, runtime.top_k2, 0.0
         output_tokens = max(64, min(256, runtime.answer_max_tokens))
     else:
@@ -113,7 +117,10 @@ def make_answerer(runtime: Any, prepared: PreparedArtifacts, retriever: CanonRet
 def run_questions(
     stage: str, directory: Path, fingerprint: str, questions: list[dict[str, Any]], runtime: Any,
     prepared: PreparedArtifacts, retriever: CanonRetriever, client: Any, force: bool,
+    short_prompt: ShortAnswerPrompt | None = None,
 ) -> dict[str, Any]:
+    selected = load_short_prompt(short_prompt) if stage == "generate_short" else None
+    prompt_meta = {"short_prompt": selected.metadata()} if selected is not None else {}
     directory.mkdir(parents=True, exist_ok=True)
     checkpoint_dir = directory / "questions"
     checkpoint_dir.mkdir(exist_ok=True)
@@ -141,7 +148,7 @@ def run_questions(
                 answer, context_tokens = None, 0
             else:
                 if not hasattr(local, "rag"):
-                    local.rag = make_answerer(runtime, prepared, retriever, client, stage)
+                    local.rag = make_answerer(runtime, prepared, retriever, client, stage, selected)
                 local.rag.last_retrieval = {}
                 with record_calls(calls, "answer"):
                     answer, _elapsed, context_tokens = local.rag.answer(question["query"])
@@ -150,6 +157,7 @@ def run_questions(
                 "total_spent": retrieval["diagnostics"]["seconds"]["retrieval"],
                 "context_tokens": context_tokens, "answer_calls": calls,
                 "wall_seconds": perf_counter() - started,
+                **prompt_meta,
             })
         except Exception as exc:
             error_type = getattr(exc, "error_type", type(exc).__name__)
@@ -157,6 +165,7 @@ def run_questions(
             retrieval = {"diagnostics": partial} if partial is not None else getattr(getattr(local, "rag", None), "last_retrieval", None)
             row.update(status="error", result=f"[Error] {error_type}", error_type=error_type, retrieval=retrieval, meta={
                 "answer_calls": calls, "wall_seconds": perf_counter() - started,
+                **prompt_meta,
             })
             print(f"{stage} question={question['qid']} failed: {error_type}", flush=True)
         return row
@@ -186,6 +195,8 @@ def run_questions(
 def run(args: argparse.Namespace) -> dict[str, Any]:
     runtime = get_config(args.dataset)
     overrides: dict[str, Any] = {}
+    cli_short_prompt = getattr(args, "short_prompt", None)
+    task_short_prompt = task_prompt_identity = None
     task_file, task_name = getattr(args, "task_file", None), getattr(args, "task", None)
     if (task_file is None) != (task_name is None):
         raise ValueError("--task-file and --task must be supplied together")
@@ -196,6 +207,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         matches = [task for task in task_list.get("tasks", []) if task.get("name") == task_name]
         if len(matches) != 1:
             raise ValueError("Task name must identify exactly one task in the file")
+        task_short_prompt = matches[0].get("short_prompt", task_list.get("short_prompt"))
+        task_prompt_identity = task_list.get("short_prompt_identity")
         allowed = {f"CANON_{field.name.upper()}": field for field in fields(CanonConfig)}
         for key, value in matches[0]["environment"].items():
             if key not in allowed:
@@ -203,6 +216,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             field = allowed[key]
             parser = parse_bool if type(field.default) is bool else type(field.default)
             overrides[field.name] = parser(value)
+    if cli_short_prompt is not None and "generate_short" not in args.steps:
+        raise ValueError("--short-prompt requires the generate_short stage.")
+    selected_prompt = None
+    if "generate_short" in args.steps:
+        selection = cli_short_prompt if cli_short_prompt is not None else task_short_prompt
+        selected_prompt = load_short_prompt(selection)
+        if cli_short_prompt is None and task_prompt_identity is not None and not selected_prompt.matches(task_prompt_identity):
+            raise ValueError("Task short-answer prompt identity mismatch; regenerate the task file or set --short-prompt explicitly.")
+        print(f"Short-answer prompt: {selected_prompt.source} (sha256={selected_prompt.sha256})", flush=True)
     overrides.update({field.name: getattr(args, field.name) for field in fields(CanonConfig) if getattr(args, field.name, None) is not None})
     method = CanonConfig.from_env(**overrides)
     encoder = get_cpu_e5_encoder(runtime.e5_model_path, runtime.e5_batch_size, runtime.e5_max_length)
@@ -213,8 +235,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         return {"prepared": True}
     questions, qa_hash = load_questions(runtime, args.question_indices, args.limit)
     root = runtime.project_root
-    source_files = list((root / "canon").rglob("*.py")) + list((root / "prompt").glob("*.py")) + [
+    source_files = list((root / "canon").rglob("*.py")) + [
+        root / "prompt/topic_choice.py", root / "prompt/subtopic_choice.py", root / "prompt/answer.py",
         root / "generate/graph_rag.py", root / "generate/graph_based_rag_short.py", root / "generate/graph_based_rag_long.py",
+        root / "generate/short_prompt.py",
         root / "index/topic_choice.py", root / "index/subtopic_choice.py", root / "index/label_selection.py",
         root / "config.py", root / "model_services.py",
     ]
@@ -223,6 +247,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "artifacts": prepared.identity, "qa_sha256": qa_hash, "questions": questions,
         "source_sha256": source_fingerprint(source_files, root),
     }
+    if selected_prompt is not None:
+        identity["short_prompt"] = selected_prompt.snapshot()
     fingerprint = digest(identity)
     run_id = args.run_id or f"{method.routing}-{fingerprint[:20]}"
     directory = runtime.results_dir / "canon" / "runs" / runtime.dataset_name / run_id
@@ -245,7 +271,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             for step in steps:
                 manifest["stages"][step] = {"completed": False}
                 atomic_json(manifest_path, manifest)
-                result = run_questions(step, directory / step, fingerprint, questions, runtime, prepared, retriever, client, args.force)
+                result = run_questions(
+                    step, directory / step, fingerprint, questions, runtime, prepared, retriever, client,
+                    args.force, short_prompt=selected_prompt,
+                )
                 manifest["stages"][step] = result
                 atomic_json(manifest_path, manifest)
         print(f"CANON outputs: {directory}", flush=True)
@@ -258,6 +287,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=safe_name, required=True)
+    add_short_prompt_argument(parser)
     parser.add_argument("--steps", nargs="+", choices=STEPS, default=["prepare", "generate_short"])
     parser.add_argument("--run-id", type=safe_name)
     parser.add_argument("--task-file", type=Path, help="Optional task list written by canon.ablations")

@@ -117,6 +117,45 @@ Build the graph, generate short answers, and evaluate them:
 python pipeline.py --dataset my_dataset --steps graph_build answer_generation_short evaluation
 ```
 
+<a id="short-prompt"></a>
+### Select a short-answer template
+
+Use `--short-prompt FILE.py` for short-answer generation. The default file is
+`prompt/answer_short.py`. Relative file paths are resolved from `thrag/`;
+absolute paths are accepted. The option is available on these entrypoints:
+
+```bash
+python pipeline.py --dataset my_dataset --steps answer_generation_short evaluation --short-prompt prompt/answer_short.py --force
+python generate/answer_generation_short.py --dataset my_dataset --short-prompt prompt/answer_short.py --force
+```
+
+Keep dataset-specific variants in separate `.py` files under `prompt/`, using
+the style of `answer_short.py` and adjusting instructions for the dataset.
+Pass the file path through `--short-prompt`, for example
+`prompt/answer_short_my_dataset.py` after creating that file. Each file must
+export a nonempty `ANSWER_PROMPT` string containing `{{context}}` and
+`{{question}}`. It may also export a nonempty `SHORT_SYSTEM_PROMPT` string;
+omitting that variable uses the system message from `prompt/answer_short.py`.
+Put maintenance comments outside the prompt strings. Only the two selected
+strings are sent as the answer-generation messages.
+
+The parameter applies to the `answer_generation_short` stage, including that
+stage inside an alias or the full pipeline. Use the
+[CANON short-answer command](canon/USAGE.md#short-prompt) for enhanced runs.
+
+Generation prints the selected file and effective SHA256. Each answer's
+`meta.short_prompt` records the template source, source-file SHA256, effective
+SHA256 and snapshot path. The exact user/system templates are saved under
+`results/generated/prompts/<effective-sha256>.json`; snapshot paths in answer
+metadata are relative to the answer file's directory. Pipeline state also
+records the selected template identity.
+
+Cached answers with prompt metadata must match the selection. An explicit
+`--short-prompt` requires verified prompt metadata on cached answers. Use
+`--force` to generate the selected template and record it. To retain several
+template runs for one dataset, archive that dataset's answer, chunk-log and
+evaluation files for each run.
+
 Replace `my_dataset` with the runtime dataset directory name. Use individual
 stage names or aliases from the [pipeline map](README.md#pipeline-stages) to
 run a subset. For long answers:

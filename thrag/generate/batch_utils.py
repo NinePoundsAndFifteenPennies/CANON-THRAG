@@ -31,11 +31,15 @@ def completed_answers(futures: list[Future], description: str) -> Iterator[Futur
 
 
 def save_answer_checkpoint(path: Path, results: list[dict[str, Any] | None]) -> None:
+    save_json_atomic(path, results)
+
+
+def save_json_atomic(path: Path, payload: Any) -> None:
     temporary_path: Path | None = None
     try:
         with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as handle:
             temporary_path = Path(handle.name)
-            json.dump(results, handle, indent=2, ensure_ascii=False)
+            json.dump(payload, handle, indent=2, ensure_ascii=False)
             handle.flush()
             os.fsync(handle.fileno())
         temporary_path.replace(path)

@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Callable
 
 from config import THRAGConfig, get_config
+from generate.short_prompt import (
+    ShortAnswerPrompt, add_short_prompt_argument, check_saved_short_prompt, load_short_prompt,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -135,10 +138,12 @@ def run_edge_embedding(dataset_name: str, force_rebuild: bool) -> str:
     return build_index_for_dataset(dataset_name=dataset_name, rebuild=force_rebuild)
 
 
-def run_answer_generation_short(dataset_name: str, force_rebuild: bool) -> str:
+def run_answer_generation_short(
+    dataset_name: str, force_rebuild: bool, short_prompt: ShortAnswerPrompt | None = None,
+) -> str:
     from generate.answer_generation_short import main as generate_short_main
 
-    return generate_short_main(dataset_name=dataset_name, force_rebuild=force_rebuild)
+    return generate_short_main(dataset_name=dataset_name, force_rebuild=force_rebuild, short_prompt=short_prompt)
 
 
 def run_answer_generation_long(dataset_name: str, force_rebuild: bool) -> str:
@@ -153,7 +158,7 @@ def run_evaluation_f1(dataset_name: str, force_rebuild: bool) -> dict:
     return evaluate_f1_main(dataset_name=dataset_name, force_rebuild=force_rebuild)
 
 
-STEP_HANDLERS: dict[str, Callable[[str, bool], object]] = {
+STEP_HANDLERS: dict[str, Callable[..., object]] = {
     "graph_construction": run_graph_construction,
     "json_to_gexf": run_json_to_gexf,
     "edge_embedding": run_edge_embedding,
@@ -167,9 +172,13 @@ def run_pipeline(
     dataset_name: str,
     requested_steps: list[str] | None = None,
     force_rebuild: bool = False,
+    short_prompt: str | Path | None = None,
 ) -> dict[str, object]:
     config = get_config(dataset_name)
     steps = resolve_steps(requested_steps)
+    if short_prompt is not None and "answer_generation_short" not in steps:
+        raise ValueError("--short-prompt requires the answer_generation_short stage.")
+    selected_prompt = load_short_prompt(short_prompt) if "answer_generation_short" in steps else None
     validate_inputs(config, steps)
 
     print(f"Running TH-RAG pipeline for dataset: {dataset_name}")
@@ -195,9 +204,15 @@ def run_pipeline(
         )
         skipped = not rebuild_step and step_is_complete(config, step_name)
         if skipped:
+            if step_name == "answer_generation_short":
+                check_saved_short_prompt(
+                    config.get_answer_file(answer_type="short"), selected_prompt,
+                    allow_untracked=short_prompt is None,
+                )
             print("Skipped because the expected outputs already exist. Use --force to rebuild.")
         else:
-            results[step_name] = STEP_HANDLERS[step_name](dataset_name, rebuild_step)
+            kwargs = {"short_prompt": selected_prompt} if step_name == "answer_generation_short" else {}
+            results[step_name] = STEP_HANDLERS[step_name](dataset_name, rebuild_step, **kwargs)
 
         if step_name == "graph_construction":
             repaired_output = repair_pending_graph(config)
@@ -255,6 +270,7 @@ def list_datasets() -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the TH-RAG pipeline.")
     parser.add_argument("--dataset", help="Dataset name under the configured data directory")
+    add_short_prompt_argument(parser)
     parser.add_argument(
         "--steps",
         nargs="+",
@@ -294,6 +310,7 @@ def main() -> None:
             dataset_name=args.dataset,
             requested_steps=args.steps,
             force_rebuild=args.force,
+            short_prompt=args.short_prompt,
         )
     except Exception as exc:
         print(f"Pipeline failed: {exc}")

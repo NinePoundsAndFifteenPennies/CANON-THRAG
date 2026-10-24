@@ -1,3 +1,22 @@
+# Keep dataset-specific short-answer variants in separate .py files, following
+# this template's style and adjusting only instructions for that dataset.
+# Select a file with --short-prompt. Export ANSWER_PROMPT with {{context}} and
+# {{question}}; optionally export SHORT_SYSTEM_PROMPT to set its system message.
+# These source comments are outside the prompt strings and are not sent to the LLM.
+
+SHORT_SYSTEM_PROMPT = (
+    "You answer multi-hop questions using only the supplied graph evidence. "
+    "Output only the final short answer on one line. "
+    "For yes/no questions, output exactly yes or no in lowercase. "
+    "For factual questions, output only the requested name, date, number, or "
+    "shortest complete phrase, preserving complete proper names and required units. "
+    "Never include explanations, reasoning, citations, background, or an answer prefix, "
+    "even for questions requiring comparison or inference across documents. "
+    "If the evidence is insufficient, output exactly Insufficient information. "
+    "Do not invent facts."
+)
+
+
 ANSWER_PROMPT = """Role:
 You are a multi-hop question answering assistant.
 

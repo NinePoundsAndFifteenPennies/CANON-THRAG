@@ -18,18 +18,22 @@ from pathlib import Path
 from typing import Any
 
 from config import get_config
-from generate.batch_utils import completed_answers, save_answer_checkpoint
+from generate.batch_utils import completed_answers, save_answer_checkpoint, save_json_atomic
 from generate.graph_based_rag_short import GraphRAG
+from generate.short_prompt import ShortAnswerPrompt, add_short_prompt_argument, load_short_prompt
 
 _THREAD_STATE = threading.local()
 
 
 
-def get_rag(dataset_name: str) -> GraphRAG:
+def get_rag(dataset_name: str, short_prompt: ShortAnswerPrompt | None = None) -> GraphRAG:
+    selected = load_short_prompt(short_prompt)
+    key = (dataset_name, selected.source, selected.sha256)
     rag = getattr(_THREAD_STATE, "rag", None)
-    if rag is None or getattr(rag, "dataset_name", None) != dataset_name:
-        rag = GraphRAG(dataset_name=dataset_name)
+    if rag is None or getattr(_THREAD_STATE, "rag_key", None) != key:
+        rag = GraphRAG(dataset_name=dataset_name, short_prompt=selected)
         _THREAD_STATE.rag = rag
+        _THREAD_STATE.rag_key = key
     return rag
 
 
@@ -46,7 +50,11 @@ def load_questions(input_path: Path) -> list[dict[str, Any]]:
 
 
 
-def main(dataset_name: str, force_rebuild: bool = False) -> str:
+def main(
+    dataset_name: str, force_rebuild: bool = False,
+    short_prompt: ShortAnswerPrompt | str | Path | None = None,
+) -> str:
+    selected = load_short_prompt(short_prompt)
     config = get_config(dataset_name)
     input_path = config.get_questions_file()
     output_path = config.get_answer_file(answer_type="short")
@@ -55,11 +63,14 @@ def main(dataset_name: str, force_rebuild: bool = False) -> str:
 
     questions = load_questions(input_path)
     results: list[dict[str, Any] | None] = [None] * len(questions)
+    prompt_snapshot = Path("prompts") / f"{selected.sha256}.json"
+    prompt_metadata = {**selected.metadata(), "snapshot": prompt_snapshot.as_posix()}
+    print(f"Short-answer prompt: {selected.source} (sha256={selected.sha256})", flush=True)
 
     def process(index: int, item: dict[str, Any]) -> tuple[int, dict[str, Any], list[dict[str, str]]]:
         query = str(item.get("query", "")).strip()
         try:
-            rag = get_rag(dataset_name)
+            rag = get_rag(dataset_name, selected)
             answer_text, elapsed, context_tokens = rag.answer(query=query)
             chunk_log_entries = [
                 {"query": query, "chunk_id": chunk_id}
@@ -75,6 +86,7 @@ def main(dataset_name: str, force_rebuild: bool = False) -> str:
                 "meta": {
                     "total_spent": elapsed,
                     "context_tokens": context_tokens,
+                    "short_prompt": prompt_metadata,
                 },
             }
         except Exception as exc:
@@ -85,6 +97,7 @@ def main(dataset_name: str, force_rebuild: bool = False) -> str:
                 "meta": {
                     "total_spent": 0.0,
                     "context_tokens": 0,
+                    "short_prompt": prompt_metadata,
                 },
             }
             chunk_log_entries = []
@@ -92,6 +105,9 @@ def main(dataset_name: str, force_rebuild: bool = False) -> str:
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     chunk_log_path.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path = output_path.parent / prompt_snapshot
+    snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+    save_json_atomic(snapshot_path, {"sha256": selected.sha256, **selected.texts()})
 
     log_lines: list[str] = []
     error_count = 0
@@ -133,6 +149,7 @@ def main(dataset_name: str, force_rebuild: bool = False) -> str:
         chunk_log_file=str(chunk_log_path),
         total_questions=len(finalized_results),
         valid_answers=valid_answers,
+        short_prompt=prompt_metadata,
         force_rebuild=force_rebuild,
     )
     print(f"Short-answer results written to {output_path}")
@@ -143,6 +160,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate short answers for a TH-RAG dataset.")
     parser.add_argument("--dataset", required=True, help="Dataset name under data/<dataset>/")
     parser.add_argument("--force", action="store_true", help="Overwrite existing output files.")
+    add_short_prompt_argument(parser)
     args = parser.parse_args()
-    main(dataset_name=args.dataset, force_rebuild=args.force)
+    main(dataset_name=args.dataset, force_rebuild=args.force, short_prompt=args.short_prompt)
 
