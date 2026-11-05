@@ -22,7 +22,6 @@
 | [allocation/](allocation/) | 独立开关的桥梁加权与分支覆盖 |
 | [retriever.py](retriever.py) | 组合模块并输出句子、路径与 chunk |
 | [pipeline.py](pipeline.py) | 增强版运行入口与逐题断点 |
-| [ablations.py](ablations.py) | 生成可选模块任务清单，不自动执行实验 |
 | [回归用例](../tests/test_canon.py) | 使用模拟客户端和小型向量的测试 |
 
 内部使用 `(topic_id, subtopic_id)` 路径，区分不同父主题下的同名子主题。原 [GraphRAG](../generate/graph_rag.py) 接受可选的检索器、客户端、配置与 chunk 表注入，原调用方仍使用默认路径。

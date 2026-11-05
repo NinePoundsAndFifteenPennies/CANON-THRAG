@@ -21,6 +21,7 @@ from canon.core.config import CanonConfig, parse_bool
 from canon.core.io import atomic_json, atomic_jsonl, digest, file_digest, read_json
 from canon.core.telemetry import MeteredClient, record_calls
 from canon.retriever import CanonRetriever
+from canon.routing.replay import ReplayOnlyRouter, RoutingReplay, routing_signature
 
 STEPS = ("prepare", "retrieve", "generate_short", "generate_long")
 
@@ -118,6 +119,7 @@ def run_questions(
     stage: str, directory: Path, fingerprint: str, questions: list[dict[str, Any]], runtime: Any,
     prepared: PreparedArtifacts, retriever: CanonRetriever, client: Any, force: bool,
     short_prompt: ShortAnswerPrompt | None = None,
+    replay: RoutingReplay | None = None,
 ) -> dict[str, Any]:
     selected = load_short_prompt(short_prompt) if stage == "generate_short" else None
     prompt_meta = {"short_prompt": selected.metadata()} if selected is not None else {}
@@ -142,14 +144,17 @@ def run_questions(
         calls: list[dict[str, Any]] = []
         started = perf_counter()
         row: dict[str, Any] = {**question, "run_fingerprint": fingerprint}
+        if hasattr(local, "rag"):
+            local.rag.last_retrieval = {}
         try:
+            query_retriever = retriever.with_routing(question["query"], replay.load(question)) if replay is not None else retriever
             if stage == "retrieve":
-                retrieval = retriever.retrieve(question["query"])
+                retrieval = query_retriever.retrieve(question["query"])
                 answer, context_tokens = None, 0
             else:
                 if not hasattr(local, "rag"):
-                    local.rag = make_answerer(runtime, prepared, retriever, client, stage, selected)
-                local.rag.last_retrieval = {}
+                    local.rag = make_answerer(runtime, prepared, query_retriever, client, stage, selected)
+                local.rag.retriever = query_retriever
                 with record_calls(calls, "answer"):
                     answer, _elapsed, context_tokens = local.rag.answer(question["query"])
                 retrieval = local.rag.last_retrieval
@@ -194,38 +199,17 @@ def run_questions(
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     runtime = get_config(args.dataset)
-    overrides: dict[str, Any] = {}
     cli_short_prompt = getattr(args, "short_prompt", None)
-    task_short_prompt = task_prompt_identity = None
-    task_file, task_name = getattr(args, "task_file", None), getattr(args, "task", None)
-    if (task_file is None) != (task_name is None):
-        raise ValueError("--task-file and --task must be supplied together")
-    if task_file is not None:
-        task_list = read_json(task_file)
-        if task_list.get("dataset") != args.dataset:
-            raise ValueError("Task file belongs to another dataset")
-        matches = [task for task in task_list.get("tasks", []) if task.get("name") == task_name]
-        if len(matches) != 1:
-            raise ValueError("Task name must identify exactly one task in the file")
-        task_short_prompt = matches[0].get("short_prompt", task_list.get("short_prompt"))
-        task_prompt_identity = task_list.get("short_prompt_identity")
-        allowed = {f"CANON_{field.name.upper()}": field for field in fields(CanonConfig)}
-        for key, value in matches[0]["environment"].items():
-            if key not in allowed:
-                raise ValueError(f"Unsupported task setting: {key}")
-            field = allowed[key]
-            parser = parse_bool if type(field.default) is bool else type(field.default)
-            overrides[field.name] = parser(value)
+    replay_source = getattr(args, "routing_from", None)
     if cli_short_prompt is not None and "generate_short" not in args.steps:
         raise ValueError("--short-prompt requires the generate_short stage.")
+    if replay_source is not None and not any(step in args.steps for step in ("retrieve", "generate_short", "generate_long")):
+        raise ValueError("--routing-from requires a retrieval or answer-generation stage")
     selected_prompt = None
     if "generate_short" in args.steps:
-        selection = cli_short_prompt if cli_short_prompt is not None else task_short_prompt
-        selected_prompt = load_short_prompt(selection)
-        if cli_short_prompt is None and task_prompt_identity is not None and not selected_prompt.matches(task_prompt_identity):
-            raise ValueError("Task short-answer prompt identity mismatch; regenerate the task file or set --short-prompt explicitly.")
+        selected_prompt = load_short_prompt(cli_short_prompt)
         print(f"Short-answer prompt: {selected_prompt.source} (sha256={selected_prompt.sha256})", flush=True)
-    overrides.update({field.name: getattr(args, field.name) for field in fields(CanonConfig) if getattr(args, field.name, None) is not None})
+    overrides = {field.name: getattr(args, field.name) for field in fields(CanonConfig) if getattr(args, field.name, None) is not None}
     method = CanonConfig.from_env(**overrides)
     encoder = get_cpu_e5_encoder(runtime.e5_model_path, runtime.e5_batch_size, runtime.e5_max_length)
     prepared = prepare_artifacts(runtime, method, encoder, force=args.force)
@@ -242,10 +226,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         root / "index/topic_choice.py", root / "index/subtopic_choice.py", root / "index/label_selection.py",
         root / "config.py", root / "model_services.py",
     ]
+    runtime_info = runtime_identity(runtime)
+    route_signature = routing_signature(runtime, method, prepared, runtime_info)
+    replay = RoutingReplay(Path(replay_source), route_signature) if replay_source is not None else None
     identity = {
-        "schema": 1, "method": method.to_dict(), "runtime": runtime_identity(runtime),
+        "schema": 2, "method": method.to_dict(), "runtime": runtime_info,
         "artifacts": prepared.identity, "qa_sha256": qa_hash, "questions": questions,
         "source_sha256": source_fingerprint(source_files, root),
+        "routing_signature": route_signature, "routing_replay": replay.metadata() if replay is not None else None,
     }
     if selected_prompt is not None:
         identity["short_prompt"] = selected_prompt.snapshot()
@@ -262,10 +250,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         manifest = {"fingerprint": fingerprint, "identity": identity, "git": git_identity(root), "stages": {}}
     raw_client = None
     try:
-        if method.routing != "a" or any(step.startswith("generate_") for step in steps):
+        if (replay is None and method.routing != "a") or any(step.startswith("generate_") for step in steps):
             raw_client = create_chat_client(runtime)
         client = MeteredClient(raw_client) if raw_client is not None else None
-        retriever = CanonRetriever(prepared.store, prepared.hierarchy, encoder, method, runtime, client)
+        retriever = CanonRetriever(prepared.store, prepared.hierarchy, encoder, method, runtime, client,
+                                   router=ReplayOnlyRouter() if replay is not None else None)
         with artifact_lock(directory):
             atomic_json(manifest_path, manifest)
             for step in steps:
@@ -273,7 +262,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 atomic_json(manifest_path, manifest)
                 result = run_questions(
                     step, directory / step, fingerprint, questions, runtime, prepared, retriever, client,
-                    args.force, short_prompt=selected_prompt,
+                    args.force, short_prompt=selected_prompt, replay=replay,
                 )
                 manifest["stages"][step] = result
                 atomic_json(manifest_path, manifest)
@@ -290,10 +279,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_short_prompt_argument(parser)
     parser.add_argument("--steps", nargs="+", choices=STEPS, default=["prepare", "generate_short"])
     parser.add_argument("--run-id", type=safe_name)
-    parser.add_argument("--task-file", type=Path, help="Optional task list written by canon.ablations")
-    parser.add_argument("--task", help="Select one task; explicit module CLI switches override its settings")
+    parser.add_argument("--routing-from", type=Path, help="Replay matching V2 per-question routes; does not rerun the routing LLM")
     parser.add_argument("--force", action="store_true", help="Rebuild only CANON derived artifacts and selected answer stages; never re-extract facts")
-    parser.add_argument("--hierarchy", choices=("none", "split", "split_merge"))
+    parser.add_argument("--hierarchy", choices=("none", "normalize", "split", "split_merge"))
     parser.add_argument("--routing", choices=("baseline", "a", "b", "hybrid"))
     for name in ("soft-links", "bridge", "balance"):
         parser.add_argument(f"--{name}", type=parse_bool, metavar="on|off")

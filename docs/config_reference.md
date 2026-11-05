@@ -101,7 +101,7 @@ E5 通过 Sentence-Transformers 仅在 CPU 本地加载。query 加 `query: `，
 <a id="canon"></a>
 ## CANON 独立模块配置
 
-实现为 [canon/core/config.py](../thrag/canon/core/config.py)。这些变量只被新入口读取，不影响原 pipeline；优先级为新入口显式 CLI 开关、选定任务清单中的方法配置、进程环境、`.env`、代码默认值。可复制初值只维护在 [配置模板](../thrag/.env.example)。CLI 和缓存操作见 [服务器说明](../thrag/SETUP_GUIDE.md#canon)。
+实现为 [canon/core/config.py](../thrag/canon/core/config.py)。这些变量只被新入口读取，不影响原 pipeline；优先级为新入口显式 CLI 开关、进程环境、`.env`、代码默认值。可复制初值只维护在 [配置模板](../thrag/.env.example)。CLI 和缓存操作见 [服务器说明](../thrag/SETUP_GUIDE.md#canon)。
 
 | 配置 | 作用 |
 |---|---|

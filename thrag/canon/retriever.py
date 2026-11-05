@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import copy
 from time import perf_counter
 from typing import Any
 
@@ -27,12 +28,21 @@ class RetrievalFailure(RuntimeError):
 class CanonRetriever:
     def __init__(
         self, store: EvidenceStore, hierarchy: HierarchyArtifacts, encoder: Any,
-        config: CanonConfig, runtime: Any, client: Any = None,
+        config: CanonConfig, runtime: Any, client: Any = None, *, router: Any = None,
     ) -> None:
         self.store, self.hierarchy, self.encoder = store, hierarchy, encoder
         self.config, self.runtime = config, runtime
-        self.router = make_router(store, hierarchy, config, runtime, client)
+        self.router = router if router is not None else make_router(store, hierarchy, config, runtime, client)
         self.allocator = Allocator(store, hierarchy, config)
+
+    def with_routing(self, query: str, routing: Any) -> CanonRetriever:
+        from canon.routing.replay import FrozenRouter
+
+        if any(path not in self.hierarchy.branch_entities for path in routing.paths):
+            raise ValueError("Replay route references paths outside the current hierarchy")
+        cloned = copy(self)
+        cloned.router = FrozenRouter(query, routing)
+        return cloned
 
     def retrieve(self, query: str, top_k1: int | None = None, top_k2: int | None = None) -> dict[str, Any]:
         k1 = self.runtime.top_k1 if top_k1 is None else top_k1

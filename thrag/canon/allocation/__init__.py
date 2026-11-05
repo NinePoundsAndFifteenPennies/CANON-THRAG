@@ -20,10 +20,13 @@ class Allocator:
         scores, bridge_entities = bridge_scores(context, routing, indices, self.store, self.hierarchy, self.config)
         ranked = sorted(indices, key=lambda index: (-scores[index], self.store.records[index].id))
         covered = None
+        coverage_diagnostics = {}
         if self.config.balance:
             chunks, mandatory, covered = choose_chunks(
                 indices, scores, routing.paths, self.store, self.hierarchy, k2,
                 self.config.coverage_weight, 1 + (self.config.bridge_weight if self.config.bridge else 0),
+                raw_scores={index: float(context.sentence_scores[index]) for index in indices},
+                anchor_fraction=self.config.coverage_anchor_fraction, diagnostics=coverage_diagnostics,
             )
             selected = set(mandatory)
             for index in ranked:
@@ -44,4 +47,5 @@ class Allocator:
             "bridge": self.config.bridge, "balance": self.config.balance,
             "bridge_entities": bridge_entities, "covered_paths": covered,
             "candidate_sentences": len(indices), "unique_chunks": len(chunks),
+            **coverage_diagnostics,
         })

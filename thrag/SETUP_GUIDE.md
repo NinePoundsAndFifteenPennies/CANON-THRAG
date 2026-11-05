@@ -156,6 +156,8 @@ Cached answers with prompt metadata must match the selection. An explicit
 template runs for one dataset, archive that dataset's answer, chunk-log and
 evaluation files for each run.
 
+### Stage selection and long answers
+
 Replace `my_dataset` with the runtime dataset directory name. Use individual
 stage names or aliases from the [pipeline map](README.md#pipeline-stages) to
 run a subset. For long answers:
@@ -167,6 +169,8 @@ python pipeline.py --dataset my_dataset --steps answer_generation_long
 Omitting `--steps` runs all canonical stages, including both answer modes.
 [`index/build_graph.py`](index/build_graph.py) is an alternative graph-only
 wrapper; [`run_pipeline.bat`](run_pipeline.bat) is the optional Windows launcher.
+
+### Pairwise LLM evaluation
 
 For pairwise LLM evaluation, replace the example file paths with actual files:
 

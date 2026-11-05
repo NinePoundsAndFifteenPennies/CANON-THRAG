@@ -18,7 +18,7 @@ def parse_bool(value: str) -> bool:
 
 @dataclass(frozen=True)
 class CanonConfig:
-    hierarchy: str = "split_merge"
+    hierarchy: str = "normalize"
     soft_links: bool = True
     routing: str = "hybrid"
     bridge: bool = True
@@ -27,6 +27,10 @@ class CanonConfig:
     merge_label_threshold: float = 0.90
     merge_context_threshold: float = 0.90
     sentence_prototype_weight: float = 0.80
+    synonym_batch_size: int = 8
+    synonym_max_pairs: int = 2000
+    synonym_contexts: int = 3
+    synonym_evidence_chars: int = 240
     soft_label_threshold: float = 0.85
     soft_context_threshold: float = 0.85
     soft_neighbors: int = 5
@@ -48,10 +52,11 @@ class CanonConfig:
     bridge_seed_sentences: int = 5
     bridge_weight: float = 0.20
     coverage_weight: float = 0.30
+    coverage_anchor_fraction: float = 0.50
 
     def __post_init__(self) -> None:
         for name, allowed in {
-            "hierarchy": {"none", "split", "split_merge"},
+            "hierarchy": {"none", "normalize", "split", "split_merge"},
             "routing": {"baseline", "a", "b", "hybrid"},
         }.items():
             if getattr(self, name) not in allowed:
@@ -61,13 +66,14 @@ class CanonConfig:
             if isinstance(value, float) and not math.isfinite(value):
                 raise ValueError(f"CANON_{field.name.upper()} must be finite")
             if type(value) is int:
-                minimum = 0 if field.name.startswith("candidate_") else 1
+                minimum = 0 if field.name.startswith("candidate_") or field.name == "synonym_max_pairs" else 1
                 if value < minimum:
                     raise ValueError(f"CANON_{field.name.upper()} must be >= {minimum}")
         for name in (
             "merge_label_threshold", "merge_context_threshold", "sentence_prototype_weight",
             "soft_label_threshold", "soft_context_threshold", "bottom_up_weight",
             "activation_label_weight", "bridge_weight", "coverage_weight", "soft_transition_weight",
+            "coverage_anchor_fraction",
         ):
             if not 0 <= getattr(self, name) <= 1:
                 raise ValueError(f"CANON_{name.upper()} must be between 0 and 1")
@@ -93,5 +99,13 @@ class CanonConfig:
     def hierarchy_settings(self) -> dict[str, Any]:
         return {key: value for key, value in asdict(self).items() if (
             key in {"hierarchy", "soft_links", "sentence_prototype_weight"}
-            or key.startswith("merge_") or key.startswith("soft_")
+            or key.startswith("merge_") or key.startswith("soft_") or key.startswith("synonym_")
+        )}
+
+    def routing_settings(self) -> dict[str, Any]:
+        """Settings that must match when replaying a route for an E ablation."""
+        return {key: value for key, value in asdict(self).items() if (
+            key == "routing" or key == "soft_transition_weight"
+            or key.startswith(("seed_", "diffusion_", "activation_", "candidate_", "preview_", "route_"))
+            or key in {"bottom_up_weight", "restart"}
         )}

@@ -73,27 +73,8 @@ python -m canon.pipeline --dataset my_dataset --hierarchy none --soft-links off 
 
 **这些模块开关不会关闭基础优化。**作者源码的原版对照仍由用户单独运行；原 `pipeline.py` 不会自动启用本包。
 
-<a id="ablations"></a>
-## 4. 可选消融任务清单
-
-先生成任务清单，不执行任何实验：
-
-```bash
-python -m canon.ablations --dataset my_dataset --matrix core --output /absolute/path/core_tasks.json --short-prompt prompt/answer_short.py
-```
-
-矩阵可选 `core`、`routing`、`hierarchy`、`allocation`。任务的 `environment` 保存当时的方法配置，部署和模型服务配置取自服务器环境。任务清单的 `short_prompt` 与 `short_prompt_identity` 保存选定模板及其指纹，任务命令携带 `--short-prompt`。
-
-选中一个任务后再运行：
-
-```bash
-python -m canon.pipeline --dataset my_dataset --task-file /absolute/path/core_tasks.json --task h1_r1_e1 --steps generate_short
-```
-
-执行任务时会读取清单中的短答模板，并校验其有效文本指纹。可显式传 `--short-prompt FILE.py` 指定本次任务的模板；本次选择会写入运行记录。显式 CLI 模块开关优先于任务配置。该入口不自动运行作者对照、不比较实验结果、不生成修复贡献报告或评测指标。
-
 <a id="outputs"></a>
-## 5. 产物、缓存与续跑
+## 4. 产物、缓存与续跑
 
 所有增强版产物位于 `<storage_root>/results/canon/`：
 
@@ -115,7 +96,7 @@ python -m canon.pipeline --dataset my_dataset --task-file /absolute/path/core_ta
 这些文件是运行记录，不是自动评测报告。现有答案评测按问题文本对齐等限制见 [评测审计](../../docs/resource_audit.md#evaluation)。
 
 <a id="tests"></a>
-## 6. 服务器回归检查
+## 5. 服务器回归检查
 
 同步代码和配置后，可在服务器执行：
 

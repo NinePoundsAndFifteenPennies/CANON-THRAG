@@ -15,6 +15,7 @@ from canon.core.io import atomic_json, digest, file_digest, read_json
 from canon.hierarchy import HierarchyArtifacts, build_hierarchy
 
 SCHEMA_VERSION = 1
+HIERARCHY_SCHEMA_VERSION = 2
 EVIDENCE_FILES = ("sentences.json", "vocabulary.json", "sentences.npy", "vocabulary.npy")
 HIERARCHY_FILES = ("hierarchy.json", "canonical_map.json", "hierarchy_labels.npy")
 
@@ -122,16 +123,31 @@ def prepare_artifacts(runtime: Any, method: CanonConfig, encoder: Any, force: bo
             finish_cache(evidence_dir, inputs, EVIDENCE_FILES, perf_counter() - started)
     else:
         store = EvidenceStore.load(evidence_dir, chunk_map)
+    from canon.hierarchy.source_order import occurrence_order
+    from canon.hierarchy.synonym_review import SynonymReviewer, review_identity
+
+    semantic_identity = review_identity(runtime, method) if method.hierarchy == "normalize" else None
     hierarchy_inputs = {
-        "schema": SCHEMA_VERSION, "evidence": digest(inputs), "method": method.hierarchy_settings(),
+        "schema": HIERARCHY_SCHEMA_VERSION, "evidence": digest(inputs), "method": method.hierarchy_settings(),
         "source": source_fingerprint(list((root / "canon/hierarchy").glob("*.py")), root),
         "libraries": dependency_versions(("numpy", "networkx", "faiss-cpu", "faiss-gpu")),
+        "semantic_review": semantic_identity,
     }
     hierarchy_dir = cache_root / ("hierarchy-" + digest(hierarchy_inputs)[:24])
     if force or not valid_cache(hierarchy_dir, hierarchy_inputs, HIERARCHY_FILES):
         with artifact_lock(hierarchy_dir):
             started = perf_counter()
-            hierarchy = build_hierarchy(store, method)
+            order = occurrence_order(read_json(graph_path))
+            if method.hierarchy == "normalize":
+                review_dir = cache_root / ("synonyms-" + digest({"evidence": digest(inputs), "review": semantic_identity})[:24])
+                with artifact_lock(review_dir):
+                    reviewer = SynonymReviewer(runtime, method, review_dir / "decisions.json", retry_failed=force)
+                    try:
+                        hierarchy = build_hierarchy(store, method, source_order=order, synonym_reviewer=reviewer)
+                    finally:
+                        reviewer.close()
+            else:
+                hierarchy = build_hierarchy(store, method, source_order=order)
             hierarchy.save(hierarchy_dir)
             finish_cache(hierarchy_dir, hierarchy_inputs, HIERARCHY_FILES, perf_counter() - started)
     else:
@@ -139,4 +155,7 @@ def prepare_artifacts(runtime: Any, method: CanonConfig, encoder: Any, force: bo
     return PreparedArtifacts(store, hierarchy, evidence_dir, hierarchy_dir, {
         "evidence": inputs, "hierarchy": hierarchy_inputs,
         "evidence_path": str(evidence_dir), "hierarchy_path": str(hierarchy_dir),
+        "evidence_content": read_json(evidence_dir / "manifest.json")["files"],
+        "hierarchy_content": {name: read_json(hierarchy_dir / "manifest.json")["files"][name]
+                              for name in ("hierarchy.json", "hierarchy_labels.npy")},
     })
