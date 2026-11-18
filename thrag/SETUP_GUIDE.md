@@ -170,6 +170,28 @@ Omitting `--steps` runs all canonical stages, including both answer modes.
 [`index/build_graph.py`](index/build_graph.py) is an alternative graph-only
 wrapper; [`run_pipeline.bat`](run_pipeline.bat) is the optional Windows launcher.
 
+<a id="retrieval-evaluation"></a>
+### Evaluate saved retrievals
+
+Run the offline evaluator from `thrag/` for HotpotQA or MultiHop-RAG. It reads
+the original dataset files and chunk KV store together with the saved logs.
+Log paths can be absolute or relative to `<storage_root>/results/`.
+
+```bash
+python evaluate/judge_retrieval.py \
+  --dataset multihop_1000 \
+  --run thrag=chunks/multihop_1000_chunks_short.jsonl \
+  --run canon=canon/runs/multihop_1000/full_short/generate_short/retrievals.jsonl \
+  --run no_e=canon/runs/multihop_1000/no_e_short/generate_short/retrievals.jsonl
+```
+
+Use the corresponding dataset and log paths for HotpotQA. Repeat
+`--run LABEL=PATH` for each ablation, or omit it to score the standard TH-RAG
+short-answer log on its own. Use `--top-k` to set the cutoff for older runs with
+a different chunk budget. Use `--output` to keep multiple evaluation reports.
+See the [retrieval scoring rules](../docs/resource_audit.md#retrieval-scoring)
+for the report counts and metrics.
+
 ### Pairwise LLM evaluation
 
 For pairwise LLM evaluation, replace the example file paths with actual files:
@@ -196,7 +218,7 @@ All paths in this table are relative to `<storage_root>/results/`:
 | `index/` | `<dataset>_graph.json`, `<dataset>_kv_store.json`, `<dataset>_graph.gexf`, `<dataset>_edge_index.faiss`, `<dataset>_edge_payloads.npy` |
 | `generated/` | `<dataset>_answers_short.json`, `<dataset>_answers_long.json` |
 | `chunks/` | `<dataset>_chunks_short.jsonl`, `<dataset>_chunks_long.jsonl` |
-| `evaluated/` | `<dataset>_eval_f1.json`; pairwise output uses the explicit CLI path |
+| `evaluated/` | `<dataset>_eval_f1.json`, `<dataset>_eval_retrieval.json`. Pairwise output uses the explicit CLI path. |
 
 Pipeline bookkeeping remains at `thrag/temp/pipeline_state.json` in the code
 checkout. The tokenizer also remains in the checkout, outside runtime storage.

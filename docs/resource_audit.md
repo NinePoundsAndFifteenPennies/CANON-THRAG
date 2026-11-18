@@ -50,10 +50,21 @@
 原始抽取缓存没有自动获得模型版本证明；CANON manifest 中的抽取 SHA256 是输入快照身份，当前模型信息记录的是本次运行配置。原始抽取模型、commit 等历史信息仍需与用户已有抽取记录对应，不能从当前配置倒推。
 
 <a id="evaluation"></a>
-## 答案评测口径
+## 评测口径
+
+### 答案评测
 
 [`judge_F1.py`](../thrag/evaluate/judge_F1.py)输出 normalized exact match、F1、precision、recall 和 normalized gold substring accuracy；论文指标定义另见 [论文评测部分](thrag_paper_brief.md)，不可把 accuracy 当作 exact match。
 
 `missing/compared/total` 单独统计。缺失或 `[Error]` 预测不进入当前脚本的均值分母，因此模型失败率必须同时报告。预测和 gold 按 query 建字典，重复 query 会覆盖。
 
 [`judge_Ultradomain.py`](../thrag/evaluate/judge_Ultradomain.py)对两个答案文件进行逐题 pairwise LLM 比较；其模型与参数含义见 [配置参考](config_reference.md)，操作命令见 [运行说明](../thrag/SETUP_GUIDE.md#run)。
+
+<a id="retrieval-scoring"></a>
+### 检索评测
+
+[`judge_retrieval.py`](../thrag/evaluate/judge_retrieval.py) 用保存的 KV 文本块和语料定位证据。HotpotQA 在同标题段落内匹配支持句，MultiHop-RAG 在标注的来源文档内匹配 fact。完整包含证据的块都是标准块，包括重叠块。原 TH-RAG 使用日志中的 `chunk_id` 顺序，CANON 使用 `retrieval.chunks` 顺序。运行方式见 [服务器说明](../thrag/SETUP_GUIDE.md#retrieval-evaluation)。
+
+每题计算 Recall@K、F1@K、Recall@5 和二值相关性的 NDCG@5，再对所有参与题目等权平均。完整证据命中率@K 要求前 K 块覆盖每一条标注证据，同一条证据被多个块覆盖也只算一次。
+
+报告的 `total` 保留 QA 全部记录，`with_gold` 统计有标准证据的题，`gold_aligned` 统计所有标准证据均能定位到块的题。`compared` 取对齐成功且所有被比较日志都有检索记录的共同题集。每组的 `missing` 记录已经对齐但缺日志的题数。日志明确记录的空检索列表计零分。没有可比题时指标为 `null`。

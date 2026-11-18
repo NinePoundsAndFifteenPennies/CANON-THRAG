@@ -1,6 +1,6 @@
  # CANON-THRAG 项目上下文与进度
 
-更新：2026-10-22（Asia/Shanghai）。本文件是唯一进度入口；文档职责见 [导航](README.md#documents)。
+更新：2026-11-18（Asia/Shanghai）。本文件是唯一进度入口；文档职责见 [导航](README.md#documents)。
 
 ## 目标与范围
 
@@ -13,13 +13,15 @@
 - 抽取已统一为每 chunk 至多 110 条三元组，使用请求级 JSON Schema 与严格落盘校验；首轮失败按 dataset 记录并继续其他 chunk。独立修复入口为 [repair_graph.py](thrag/index/repair_graph.py)，沿用原 KV 身份合并；pipeline 在抽取后及后续阶段前检查失败，自动修复一次，未解决则停止并保留成功结果与剩余记录。断点进度只由 KV 与 graph 判断，与 fail 逻辑完全分离：不带 `--force` 时保留非连续合法块、只补缺块并从落盘数量继续进度；带 `--force` 时所有选定阶段从头重建。续建加载原 fail 状态且不做对账、筛选或补写，之后仍只在成功时移除对应条目、失败时更新对应条目。
 - 三个增强模块及独立入口已写入 [canon/](thrag/canon/)，算法与原检索器分开；原生成器仅增加可选依赖注入及完整来源字段兼容。支持模块独立开关、硬规范化/仅软连接路线及 A/B/融合选择；完整来源关联与子图内精确检索只用于增强版。
 - 新入口支持配置和输入指纹隔离、逐题断点、调用/usage/耗时记录及可选消融任务清单；不自动运行作者对照或评测。用法仅在 [服务器说明](thrag/SETUP_GUIDE.md#canon) 维护，参数初值在配置模板，含义在配置参考。
-- 回归用例已编写，尚未执行。正式问题 IDs、检索评测映射、预算和实验协议仍由用户后续确定；当前参数是实现初值，未调优。
+- CANON 回归用例已编写，尚未在本地执行。当前参数是实现初值，未调优。
+- 已新增 HotpotQA、MultiHop-RAG 的离线检索评测，支持同一轮比较原 TH-RAG、CANON 和各消融的保存日志。用法见 [服务器说明](thrag/SETUP_GUIDE.md#retrieval-evaluation)，指标和分母见 [评测口径](docs/resource_audit.md#retrieval-scoring)。
 
 <a id="validation"></a>
 ## 已有验证记录
 
 2026-10-22：本轮仅完成源码逐段阅读、差异及空白检查；未执行 Python、pytest、编译、pipeline、模型调用或任何服务器试跑，不能记为运行验证通过。新增测试覆盖来源关联、作用域拆分/合并、路由调用与错误预算、桥梁/覆盖、配置缓存和逐题检查点；待用户在服务器运行。
 
+2026-11-18：本地检索评测小样例已验证两种日志、证据对齐、指标和比较分母，并读通已保存的 8 组 CANON 检索日志。公开 MultiHop 数据重新抽样的题目顺序与已保存结果一致，模拟重叠窗口下 881 道有标准证据的题全部对齐。正式检索指标待在服务器原产物上计算。
 
 当时记录的环境版本：Python 3.10.22、PyTorch 2.14.1+cpu、faiss-cpu 1.15.1、sentence-transformers 5.7.0、transformers 5.19.0、openai 3.26.0、numpy 2.2.6、pytest 9.1.1。安装步骤以 [服务器说明](thrag/SETUP_GUIDE.md#environment)为准，不在这里复制命令。
 
@@ -39,4 +41,4 @@
 
 1. 用户将新源码与配置同步到服务器，按 [运行说明](thrag/SETUP_GUIDE.md#canon) 执行回归用例，再检查真实语料派生产物与小规模问答；本轮尚未运行，服务容量和性能也未验证。
 2. 用户自行组织作者源码对照以及 A/B/融合与模块消融，确定问题 IDs、预算及最终组合；不自动加入修复版对照或修复收益报告。
-3. 完整 gold evidence→chunk 映射和 chunk 检索指标仍未实现；相关缺口见 [资源审计](docs/resource_audit.md)。
+3. 用服务器的原始语料、KV 和日志计算 HotpotQA 与 MultiHop-RAG 的检索指标，核对证据对齐率和各组日志覆盖。

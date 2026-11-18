@@ -16,7 +16,7 @@ upstream revision and license, see [UPSTREAM.md](UPSTREAM.md).
 ## Pipeline stages
 
 [`pipeline.py`](pipeline.py) resolves requested stages and runs them in the
-following order. The pairwise judge is a separate entry point.
+following order. The retrieval and pairwise judges have separate entry points.
 
 | Stage | Responsibility | Implementation |
 |---|---|---|
@@ -26,6 +26,7 @@ following order. The pairwise judge is a separate entry point.
 | `answer_generation_short` | Answer dataset questions in short form | [answer_generation_short.py](generate/answer_generation_short.py) |
 | `answer_generation_long` | Answer dataset questions in long form | [answer_generation_long.py](generate/answer_generation_long.py) |
 | `evaluation_f1` | Score short answers against the gold QA file | [judge_F1.py](evaluate/judge_F1.py) |
+| Separate retrieval judge | Score saved HotpotQA and MultiHop-RAG chunk rankings | [judge_retrieval.py](evaluate/judge_retrieval.py) |
 | Separate pairwise judge | Compare two answer files using an LLM | [judge_Ultradomain.py](evaluate/judge_Ultradomain.py) |
 
 Stage aliases:
