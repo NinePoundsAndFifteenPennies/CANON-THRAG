@@ -6,7 +6,7 @@ from functools import cache
 from typing import Any
 from unicodedata import normalize
 
-from .evidence import CorpusChunks, GoldQuestion, Span
+from .evidence import CorpusChunks, GoldQuestion, Span, tolerant_find
 
 
 def document_regions(metadata: list[dict[str, Any]], text: str) -> dict[int, Span]:
@@ -26,11 +26,12 @@ def document_regions(metadata: list[dict[str, Any]], text: str) -> dict[int, Spa
         separator = "\n\n" if headers else ""
         title = normalize("NFC", title).replace("\r\n", "\n").replace("\r", "\n")
         heading = separator + title + "\n"
-        start = text.find(heading, search_start)
-        if start < 0 or (not headers and start != 0):
+        match = tolerant_find(text, heading, search_start)
+        if match is None or (not headers and match.start() != 0):
             raise ValueError(f"MultiHop document {index} does not align with contexts.txt")
-        search_start = start + len(heading)
-        headers.append((index, start, search_start))
+        start, heading_end = match.span()
+        search_start = heading_end
+        headers.append((index, start, heading_end))
 
     region_ends = [start for _, start, _ in headers[1:]] + [len(text)]
     return {index: (body_start, end) for (index, _, body_start), end in zip(headers, region_ends)}

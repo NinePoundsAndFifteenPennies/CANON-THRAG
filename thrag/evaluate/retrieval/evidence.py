@@ -10,6 +10,36 @@ from unicodedata import normalize
 
 Span = tuple[int, int]
 
+QUOTE_CHARS = "\"'“”‘’"
+DASH_CHARS = "-‐‑‒–—−"
+
+
+def tolerant_expression(text: str) -> str:
+    """Encode only known graph-sanitization differences as regex alternatives."""
+    parts: list[str] = []
+    previous_whitespace = False
+    for char in normalize("NFC", text):
+        if char.isspace():
+            if not previous_whitespace:
+                parts.append(r"\s+")
+            previous_whitespace = True
+        elif char in QUOTE_CHARS:
+            parts.append(r"""["'“”‘’]""")
+            previous_whitespace = False
+        elif char in DASH_CHARS:
+            parts.append(r"[-‐‑‒–—−]")
+            previous_whitespace = False
+        else:
+            parts.append(re.escape(char))
+            previous_whitespace = False
+    return "".join(parts)
+
+
+def tolerant_find(text: str, piece: str, start: int = 0) -> re.Match[str] | None:
+    if not piece:
+        return None
+    return re.compile(tolerant_expression(piece)).search(text, start)
+
 
 @dataclass(frozen=True)
 class GoldQuestion:
@@ -38,14 +68,15 @@ class CorpusChunks:
             # A token window may cut through the bytes of a Unicode character.
             piece = normalize("NFC", content.strip("\ufffd"))
             earliest = max(previous_start + 1, previous_end - len(piece) + 1)
-            start = self.text.find(piece, earliest)
-            if not piece or start < 0:
+            match = tolerant_find(self.text, piece, earliest)
+            if match is None:
                 raise ValueError(f"{chunk_id} does not align with the saved contexts.txt")
+            start, end = match.span()
             split = content.startswith("\ufffd") or previous_split
             gap = self.text[previous_end:start]
             if gap.strip() and not (split and len(gap) == 1):
                 raise ValueError(f"{chunk_id} does not align with the saved contexts.txt")
-            previous_start, previous_end = start, start + len(piece)
+            previous_start, previous_end = start, end
             previous_split = content.endswith("\ufffd")
             self.ids.append(chunk_id)
             self.starts.append(previous_start)
@@ -58,7 +89,7 @@ class CorpusChunks:
         words = normalize("NFC", evidence).split()
         if not words:
             return frozenset()
-        expression = r"\s+".join(map(re.escape, words))
+        expression = r"\s+".join(tolerant_expression(word) for word in words)
         if re.match(r"\w", words[0][0]):
             expression = r"(?<!\w)" + expression
         if re.match(r"\w", words[-1][-1]):
