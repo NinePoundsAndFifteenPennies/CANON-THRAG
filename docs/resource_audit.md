@@ -4,7 +4,7 @@
 
 ## 来源与能力范围
 
-上游仓库、固定 commit、导入日期及许可证以 [UPSTREAM.md](../thrag/UPSTREAM.md) 为准；历史获取证据见 [来源 manifest](sources/upstream_web_manifest.json)，其中旧 runtime 字段是当时快照，不代表当前配置。代码入口与阶段对应关系见 [代码导航](../thrag/README.md#pipeline-stages)。
+代码入口与阶段对应关系见 [代码导航](../thrag/README.md#pipeline-stages)。
 
 仓库提供图构建、FAISS 证据检索、短答/长答和答案评测，以及两条 QA 的最小示例。正式论文子集、问题 IDs、gold evidence→chunk 映射及预建图没有随上游发布。数据准备脚本的转换范围见 [脚本说明](../scripts/README.md)。
 
@@ -20,7 +20,7 @@
 <a id="extraction"></a>
 ## 抽取数量与本地适配
 
-论文提示词要求见 [论文摘要的 prompts 部分](thrag_paper_brief.md)。上游固定版本的 [抽取提示词](https://github.com/Tiabet/TH-RAG/blob/6543fc2a8f5aadecd3032352d7d31dcd5791ec73/prompt/extract_graph.py)未规定每块 20 条上限。
+论文提示词要求见 [论文摘要的 prompts 部分](thrag_paper_brief.md)。上游固定版本的 [抽取提示词](https://github.com/Tiabet/TH-RAG/blob/6543fc2a8f5aadecd3032352d7d31dcd5791ec73/prompt/extract_graph.py)未规定每块 110 条上限。
 
 本地 commit `336eaa484efa58ffd301d06a98992cc0e07c6c5b` 曾加入“最多 20 条、优先重要事实”。随后按用户授权在 [抽取提示词](../thrag/prompt/extract_graph.py)和 [system prompt](../thrag/index/graph_construction.py)两处取消，恢复要求抽取全部有原句依据的非重复事实。解析器没有按条数裁剪列表；输出预算与截断处理见 [生成参数](config_reference.md#generation)。
 

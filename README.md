@@ -18,7 +18,7 @@
 | 服务器安装、填密钥、运行、迁移和排错 | [thrag/SETUP_GUIDE.md](thrag/SETUP_GUIDE.md) |
 | 源码入口、pipeline 阶段与目录职责 | [thrag/README.md](thrag/README.md) |
 | 原始数据抽样、转换规则和脚本用法 | [scripts/README.md](scripts/README.md) |
-| 上游版本与许可证 | [thrag/UPSTREAM.md](thrag/UPSTREAM.md) |
+
 
 [note.md](note.md) 是用户原始笔记，不随文档整理改写。[docs/sources/](docs/sources/) 保存源文证据和历史快照，按需查阅，不当作当前配置或进度入口。
 
