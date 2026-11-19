@@ -8,16 +8,17 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Iterator
+from urllib.parse import quote
+
+import numpy as np
 
 from canon.core.config import CanonConfig
 from canon.core.evidence import EvidenceStore
-from canon.core.io import atomic_json, digest, file_digest, read_json
+from canon.core.io import atomic_array, atomic_json, digest, file_digest, read_json
 from canon.hierarchy import HierarchyArtifacts, build_hierarchy
 
 SCHEMA_VERSION = 1
-HIERARCHY_SCHEMA_VERSION = 2
 EVIDENCE_FILES = ("sentences.json", "vocabulary.json", "sentences.npy", "vocabulary.npy")
-HIERARCHY_FILES = ("hierarchy.json", "canonical_map.json", "hierarchy_labels.npy")
 
 
 def dependency_versions(names: tuple[str, ...]) -> dict[str, str | None]:
@@ -89,6 +90,7 @@ class PreparedArtifacts:
     evidence_dir: Path
     hierarchy_dir: Path
     identity: dict[str, Any]
+    sentence_vectors: np.ndarray
 
 
 def prepare_artifacts(runtime: Any, method: CanonConfig, encoder: Any, force: bool = False) -> PreparedArtifacts:
@@ -123,39 +125,47 @@ def prepare_artifacts(runtime: Any, method: CanonConfig, encoder: Any, force: bo
             finish_cache(evidence_dir, inputs, EVIDENCE_FILES, perf_counter() - started)
     else:
         store = EvidenceStore.load(evidence_dir, chunk_map)
+    from canon.core.sentence_views import build_sentence_vectors
+    from canon.hierarchy.enrich import distill_branches
     from canon.hierarchy.source_order import occurrence_order
-    from canon.hierarchy.synonym_review import SynonymReviewer, review_identity
 
-    semantic_identity = review_identity(runtime, method) if method.hierarchy == "normalize" else None
-    hierarchy_inputs = {
-        "schema": HIERARCHY_SCHEMA_VERSION, "evidence": digest(inputs), "method": method.hierarchy_settings(),
-        "source": source_fingerprint(list((root / "canon/hierarchy").glob("*.py")), root),
-        "libraries": dependency_versions(("numpy", "networkx", "faiss-cpu", "faiss-gpu")),
-        "semantic_review": semantic_identity,
-    }
-    hierarchy_dir = cache_root / ("hierarchy-" + digest(hierarchy_inputs)[:24])
-    if force or not valid_cache(hierarchy_dir, hierarchy_inputs, HIERARCHY_FILES):
-        with artifact_lock(hierarchy_dir):
-            started = perf_counter()
+    hierarchy_dir = evidence_dir / ("routing-index-" + quote(runtime.default_model, safe=""))
+    index_file = hierarchy_dir / "hierarchy.json"
+    with artifact_lock(hierarchy_dir):
+        if force or not index_file.is_file():
+            if force:
+                index_file.unlink(missing_ok=True)
             order = occurrence_order(read_json(graph_path))
-            if method.hierarchy == "normalize":
-                review_dir = cache_root / ("synonyms-" + digest({"evidence": digest(inputs), "review": semantic_identity})[:24])
-                with artifact_lock(review_dir):
-                    reviewer = SynonymReviewer(runtime, method, review_dir / "decisions.json", retry_failed=force)
-                    try:
-                        hierarchy = build_hierarchy(store, method, source_order=order, synonym_reviewer=reviewer)
-                    finally:
-                        reviewer.close()
-            else:
-                hierarchy = build_hierarchy(store, method, source_order=order)
+            hierarchy = build_hierarchy(
+                store, encoder, lambda rows: distill_branches(runtime, hierarchy_dir, rows, force=force),
+                source_order=order,
+            )
             hierarchy.save(hierarchy_dir)
-            finish_cache(hierarchy_dir, hierarchy_inputs, HIERARCHY_FILES, perf_counter() - started)
-    else:
-        hierarchy = HierarchyArtifacts.load(hierarchy_dir, store)
+        else:
+            hierarchy = HierarchyArtifacts.load(hierarchy_dir, store)
+        index_revision = index_file.stat().st_mtime_ns
+
+    view = method.sentence_view
+    sentence_vectors = store.vectors
+    view_revision = None
+    if view != "raw":
+        view_dir = (hierarchy_dir if view == "llm" else evidence_dir) / ("sentences-" + view)
+        matrix_file = view_dir / "vectors.npy"
+        with artifact_lock(view_dir):
+            if force or not matrix_file.is_file():
+                if force:
+                    matrix_file.unlink(missing_ok=True)
+                vectors = build_sentence_vectors(store, encoder, view, runtime, view_dir, force=force)
+                atomic_array(matrix_file, vectors)
+                del vectors
+            sentence_vectors = np.load(matrix_file, mmap_mode="r")
+            if sentence_vectors.shape != store.vectors.shape:
+                raise ValueError(f"Sentence view is misaligned: {matrix_file}")
+            view_revision = matrix_file.stat().st_mtime_ns
+
     return PreparedArtifacts(store, hierarchy, evidence_dir, hierarchy_dir, {
-        "evidence": inputs, "hierarchy": hierarchy_inputs,
-        "evidence_path": str(evidence_dir), "hierarchy_path": str(hierarchy_dir),
+        "evidence": inputs, "evidence_path": str(evidence_dir), "hierarchy_path": str(hierarchy_dir),
         "evidence_content": read_json(evidence_dir / "manifest.json")["files"],
-        "hierarchy_content": {name: read_json(hierarchy_dir / "manifest.json")["files"][name]
-                              for name in ("hierarchy.json", "hierarchy_labels.npy")},
-    })
+        "hierarchy_content": {"model": runtime.default_model, "built_ns": index_revision},
+        "sentence_view": {"mode": view, "built_ns": view_revision},
+    }, sentence_vectors)

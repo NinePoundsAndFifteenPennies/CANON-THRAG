@@ -208,12 +208,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     selected_prompt = None
     if "generate_short" in args.steps:
         selected_prompt = load_short_prompt(cli_short_prompt)
-        print(f"Short-answer prompt: {selected_prompt.source} (sha256={selected_prompt.sha256})", flush=True)
+        print(f"Short-answer prompt: {selected_prompt.source}", flush=True)
     overrides = {field.name: getattr(args, field.name) for field in fields(CanonConfig) if getattr(args, field.name, None) is not None}
     method = CanonConfig.from_env(**overrides)
     encoder = get_cpu_e5_encoder(runtime.e5_model_path, runtime.e5_batch_size, runtime.e5_max_length)
-    prepared = prepare_artifacts(runtime, method, encoder, force=args.force)
-    print(f"Evidence artifacts: {prepared.evidence_dir}\nHierarchy artifacts: {prepared.hierarchy_dir}", flush=True)
+    prepared = prepare_artifacts(runtime, method, encoder, force=args.force and "prepare" in args.steps)
+    print(f"Evidence artifacts: {prepared.evidence_dir}\nRouting index: {prepared.hierarchy_dir}\n"
+          f"Sentence view: {method.sentence_view}", flush=True)
     steps = [step for step in STEPS if step in args.steps and step != "prepare"]
     if not steps:
         return {"prepared": True}
@@ -253,8 +254,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if (replay is None and method.routing != "a") or any(step.startswith("generate_") for step in steps):
             raw_client = create_chat_client(runtime)
         client = MeteredClient(raw_client) if raw_client is not None else None
-        retriever = CanonRetriever(prepared.store, prepared.hierarchy, encoder, method, runtime, client,
-                                   router=ReplayOnlyRouter() if replay is not None else None)
+        retriever = CanonRetriever(
+            prepared.store, prepared.hierarchy, encoder, method, runtime, client,
+            router=ReplayOnlyRouter() if replay is not None else None, sentence_vectors=prepared.sentence_vectors,
+        )
         with artifact_lock(directory):
             atomic_json(manifest_path, manifest)
             for step in steps:
@@ -279,11 +282,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_short_prompt_argument(parser)
     parser.add_argument("--steps", nargs="+", choices=STEPS, default=["prepare", "generate_short"])
     parser.add_argument("--run-id", type=safe_name)
-    parser.add_argument("--routing-from", type=Path, help="Replay matching V2 per-question routes; does not rerun the routing LLM")
-    parser.add_argument("--force", action="store_true", help="Rebuild only CANON derived artifacts and selected answer stages; never re-extract facts")
-    parser.add_argument("--hierarchy", choices=("none", "normalize", "split", "split_merge"))
+    parser.add_argument("--routing-from", type=Path, help="Reuse per-question routes from the same index and router")
+    parser.add_argument("--force", action="store_true", help="Repeat selected stages. Include prepare to rebuild the offline index.")
+    parser.add_argument("--sentence-view", choices=("raw", "triple", "llm"), help="Evidence text used for retrieval encoding")
     parser.add_argument("--routing", choices=("baseline", "a", "b", "hybrid"))
-    for name in ("soft-links", "bridge", "balance"):
+    for name in ("bridge", "balance"):
         parser.add_argument(f"--{name}", type=parse_bool, metavar="on|off")
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--limit", type=int)

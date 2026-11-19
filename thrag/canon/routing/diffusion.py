@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import math
 from typing import Any
 
 import numpy as np
@@ -11,7 +12,7 @@ from canon.core.config import CanonConfig
 from canon.core.contracts import QueryContext, RoutingResult
 from canon.core.evidence import EvidenceStore
 from canon.hierarchy import HierarchyArtifacts
-from canon.routing.common import limits, path_scores, ranked_paths
+from canon.routing.common import RouteScores, limits, path_scores, ranked_paths
 
 
 class DiffusionRouter:
@@ -20,23 +21,29 @@ class DiffusionRouter:
         self.order = sorted(hierarchy.graph.nodes)
         self.positions = {node: index for index, node in enumerate(self.order)}
         groups: dict[str, dict[str, list[tuple[str, float]]]] = defaultdict(lambda: defaultdict(list))
+        entity_up_mass: dict[str, float] = {}
         for source, target, relation, weight in hierarchy.edges:
-            if weight <= 0:
-                continue
-            if relation == "soft":
-                if not config.soft_links or config.soft_transition_weight == 0:
-                    continue
-                forward = backward = "soft"
-            elif relation == "predicate":
+            if relation == "predicate":
                 forward = backward = "predicate"
             else:
                 forward, backward = "down", "up"
+                if relation == "membership":
+                    # At an entity, every upward edge has the same IDF. Adjust the
+                    # group mass too, so normalization does not cancel the penalty.
+                    entity_up_mass[target] = weight * math.log2(3)
             groups[source][forward].append((target, weight))
             if source != target:
                 groups[target][backward].append((source, weight))
+        for subtopic, transitions in hierarchy.transitions.items():
+            if transitions:
+                groups[subtopic]["across_facts"].extend(transitions)
         sources, targets, weights = [], [], []
         for source, typed_neighbors in sorted(groups.items()):
-            masses = {kind: config.soft_transition_weight if kind == "soft" else 1.0 for kind in typed_neighbors}
+            masses = dict.fromkeys(typed_neighbors, 1.0)
+            if source in entity_up_mass:
+                masses["up"] = entity_up_mass[source]
+            if "across_facts" in masses:
+                masses["across_facts"] = 0.25
             denominator = sum(masses.values())
             for kind, neighbors in sorted(typed_neighbors.items()):
                 total = sum(weight for _, weight in neighbors)
@@ -64,7 +71,7 @@ class DiffusionRouter:
                 entities = sorted(self.store.records[index].entity_ids)
                 for entity in entities:
                     bottom[self.positions[entity]] += mass / len(entities)
-        labels = self.hierarchy.label_vectors @ context.vector
+        labels = self.hierarchy.node_maxima(self.hierarchy.semantic_scores(context.vector))
         for kind in ("topic", "subtopic"):
             candidates = [node for node in self.hierarchy.order if self.hierarchy.nodes[node]["kind"] == kind]
             candidates.sort(key=lambda node: (-float(labels[self.hierarchy.positions[node]]), node))
@@ -78,7 +85,7 @@ class DiffusionRouter:
             raise ValueError("No nonzero diffusion seeds")
         return seed / seed.sum()
 
-    def score(self, context: QueryContext) -> tuple[dict[str, float], dict[str, Any]]:
+    def score(self, context: QueryContext) -> tuple[RouteScores, dict[str, Any]]:
         seed = self.seeds(context)
         current = seed.copy()
         converged = False
@@ -93,11 +100,12 @@ class DiffusionRouter:
                 converged = True
                 break
         current /= current.sum()
-        return (
-            {node: float(current[self.positions[node]]) for node in self.hierarchy.order},
-            {"iterations": iteration, "converged": converged, "residual_l1": residual,
-             "soft_links_used": self.config.soft_links and self.config.soft_transition_weight > 0},
+        nodes = {node: float(current[self.positions[node]]) for node in self.hierarchy.order}
+        scores = RouteScores(
+            {topic: nodes[topic] for topic in self.hierarchy.children},
+            {path: (nodes[path[0]] + nodes[path[1]]) / 2 for path in self.hierarchy.branches},
         )
+        return scores, {"iterations": iteration, "converged": converged, "residual_l1": residual}
 
     def route(self, context: QueryContext) -> RoutingResult:
         scores, diagnostics = self.score(context)

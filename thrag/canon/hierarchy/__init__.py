@@ -1,4 +1,4 @@
-"""Offline hierarchy canonicalization, independent of query routing."""
+"""Offline routing index over the extracted Topic/Subtopic/Entity graph."""
 
 from canon.hierarchy.builder import HierarchyArtifacts, build_hierarchy
 

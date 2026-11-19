@@ -28,7 +28,8 @@ def routing_signature(runtime: Any, method: CanonConfig, prepared: Any, runtime_
     ]
     return digest({
         "schema": 1, "graph": prepared.identity["hierarchy_content"],
-        "evidence": prepared.identity["evidence_content"], "settings": method.routing_settings(),
+        "evidence": prepared.identity["evidence_content"], "sentence_view": prepared.identity["sentence_view"],
+        "settings": method.routing_settings(),
         "runtime": {name: runtime_info.get(name) for name in names}, "code": source_fingerprint(files, root),
     })
 
@@ -64,7 +65,7 @@ class RoutingReplay:
             raise ValueError("--routing-from must identify a CANON run directory or one of its stages")
         self.manifest = read_json(self.root / "manifest.json")
         if self.manifest.get("identity", {}).get("routing_signature") != expected_signature:
-            raise ValueError("Replay requires identical V2 graph, evidence, routing code/model and settings; generate a fresh route run first")
+            raise ValueError("Replay requires the same routing index, sentence view, model and settings")
         self.directory = self.root / self.stage / "questions"
         # Freeze only successful routing data, never generated answers. Binding the run
         # identity to these contents also catches a source run rebuilt under the same ID.

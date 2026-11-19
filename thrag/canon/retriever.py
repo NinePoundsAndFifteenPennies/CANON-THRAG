@@ -29,8 +29,10 @@ class CanonRetriever:
     def __init__(
         self, store: EvidenceStore, hierarchy: HierarchyArtifacts, encoder: Any,
         config: CanonConfig, runtime: Any, client: Any = None, *, router: Any = None,
+        sentence_vectors: np.ndarray | None = None,
     ) -> None:
         self.store, self.hierarchy, self.encoder = store, hierarchy, encoder
+        self.sentence_vectors = store.vectors if sentence_vectors is None else sentence_vectors
         self.config, self.runtime = config, runtime
         self.router = router if router is not None else make_router(store, hierarchy, config, runtime, client)
         self.allocator = Allocator(store, hierarchy, config)
@@ -54,7 +56,7 @@ class CanonRetriever:
         if vector.shape != (self.store.dimension,):
             raise ValueError("Query embedding dimension differs from the prepared evidence")
         # One query embedding and one global score vector are reused by all stages.
-        context = QueryContext(query, vector, np.asarray(self.store.vectors @ vector))
+        context = QueryContext(query, vector, self.sentence_vectors @ vector)
         scored_at = perf_counter()
         calls: list[dict[str, Any]] = []
         try:

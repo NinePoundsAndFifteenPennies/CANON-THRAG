@@ -15,7 +15,7 @@ from canon.core.config import CanonConfig
 from canon.core.contracts import Branch, QueryContext, RoutingResult
 from canon.core.evidence import EvidenceStore
 from canon.hierarchy import HierarchyArtifacts
-from canon.routing.common import activation_scores, bounded_paths, limits, path_scores, ranked_paths
+from canon.routing.common import RouteScores, activation_scores, bounded_paths, limits, path_scores, ranked_paths
 
 
 class PreviewSelector:
@@ -24,7 +24,8 @@ class PreviewSelector:
 
     def _cards(self, context: QueryContext, paths: list[Branch], tokenizer: Any) -> list[dict[str, Any]]:
         cards = []
-        previews: dict[int, str] = {}
+        previews: dict[int, list[int]] = {}
+        text_budget = self.config.preview_sentence_tokens
         for number, path in enumerate(paths, start=1):
             indices = self.hierarchy.branch_sentences[path]
             best = min(indices, key=lambda index: (-float(context.sentence_scores[index]), self.store.records[index].id))
@@ -36,16 +37,18 @@ class PreviewSelector:
             }
             matched = sorted(names, key=lambda name: (-float(self.store.text_vector(name) @ context.vector), name))[:self.config.preview_entities]
             if best not in previews:
-                previews[best] = tokenizer.decode(tokenizer.encode(record.sentence)[:self.config.preview_sentence_tokens])
+                previews[best] = tokenizer.encode(record.sentence)[:text_budget]
+            synopsis = tokenizer.encode(self.hierarchy.branch_synopses[path])[:text_budget // 2]
             cards.append({
                 "id": number, "topic": self.hierarchy.nodes[path[0]]["label"],
                 "topic_id": path[0], "subtopic": self.hierarchy.nodes[path[1]]["label"],
                 "entities": matched, "evidence_cosine": round(float(context.sentence_scores[best]), 6),
-                "preview": previews[best],
+                "synopsis": tokenizer.decode(synopsis),
+                "preview": tokenizer.decode(previews[best][:text_budget - len(synopsis)]),
             })
         return cards
 
-    def select(self, context: QueryContext, scores: dict[str, float], mode: str, diagnostics: dict[str, Any]) -> RoutingResult:
+    def select(self, context: QueryContext, scores: RouteScores, mode: str, diagnostics: dict[str, Any]) -> RoutingResult:
         topic_limit, subtopic_limit = limits(self.runtime)
         paths = ranked_paths(
             self.hierarchy, scores, self.config.candidate_topics or 2 * topic_limit,
@@ -106,7 +109,7 @@ class PreviewSelector:
             **diagnostics, "mode": mode, "candidate_paths": original_count, "prompt_paths": len(paths),
             "input_tokens_estimate": input_tokens, "output_token_budget": output_budget,
             "previews_removed": False, "retained_previews": len(cards),
-            "candidate_format": "grouped_evidence_cards_v2",
+            "candidate_format": "branch_synopsis_and_evidence",
         }
         schema = {
             "type": "object", "properties": {"paths": {
@@ -154,9 +157,9 @@ class PreviewSelector:
 
 class EvidencePreviewRouter:
     def __init__(self, store: EvidenceStore, hierarchy: HierarchyArtifacts, config: CanonConfig, runtime: Any, client: Any) -> None:
-        self.store, self.hierarchy, self.config = store, hierarchy, config
+        self.hierarchy, self.config = hierarchy, config
         self.selector = PreviewSelector(store, hierarchy, config, runtime, client)
 
     def route(self, context: QueryContext) -> RoutingResult:
-        scores = activation_scores(context, self.store, self.hierarchy, self.config)
+        scores = activation_scores(context, self.hierarchy, self.config)
         return self.selector.select(context, scores, "b", {})

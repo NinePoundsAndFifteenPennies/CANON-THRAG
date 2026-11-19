@@ -18,23 +18,10 @@ def parse_bool(value: str) -> bool:
 
 @dataclass(frozen=True)
 class CanonConfig:
-    hierarchy: str = "normalize"
-    soft_links: bool = True
+    sentence_view: str = "raw"
     routing: str = "hybrid"
     bridge: bool = True
     balance: bool = True
-    merge_neighbors: int = 20
-    merge_label_threshold: float = 0.90
-    merge_context_threshold: float = 0.90
-    sentence_prototype_weight: float = 0.80
-    synonym_batch_size: int = 8
-    synonym_max_pairs: int = 2000
-    synonym_contexts: int = 3
-    synonym_evidence_chars: int = 240
-    soft_label_threshold: float = 0.85
-    soft_context_threshold: float = 0.85
-    soft_neighbors: int = 5
-    soft_transition_weight: float = 0.25
     seed_sentences: int = 32
     seed_labels: int = 32
     bottom_up_weight: float = 0.50
@@ -45,7 +32,7 @@ class CanonConfig:
     activation_top_n: int = 3
     candidate_topics: int = 0
     candidate_subtopics: int = 0
-    preview_input_tokens: int = 8192
+    preview_input_tokens: int = 10240
     preview_sentence_tokens: int = 32
     preview_entities: int = 2
     route_attempts: int = 3
@@ -56,7 +43,7 @@ class CanonConfig:
 
     def __post_init__(self) -> None:
         for name, allowed in {
-            "hierarchy": {"none", "normalize", "split", "split_merge"},
+            "sentence_view": {"raw", "triple", "llm"},
             "routing": {"baseline", "a", "b", "hybrid"},
         }.items():
             if getattr(self, name) not in allowed:
@@ -66,13 +53,11 @@ class CanonConfig:
             if isinstance(value, float) and not math.isfinite(value):
                 raise ValueError(f"CANON_{field.name.upper()} must be finite")
             if type(value) is int:
-                minimum = 0 if field.name.startswith("candidate_") or field.name == "synonym_max_pairs" else 1
+                minimum = 0 if field.name.startswith("candidate_") else 1
                 if value < minimum:
                     raise ValueError(f"CANON_{field.name.upper()} must be >= {minimum}")
         for name in (
-            "merge_label_threshold", "merge_context_threshold", "sentence_prototype_weight",
-            "soft_label_threshold", "soft_context_threshold", "bottom_up_weight",
-            "activation_label_weight", "bridge_weight", "coverage_weight", "soft_transition_weight",
+            "bottom_up_weight", "activation_label_weight", "bridge_weight", "coverage_weight",
             "coverage_anchor_fraction",
         ):
             if not 0 <= getattr(self, name) <= 1:
@@ -96,16 +81,10 @@ class CanonConfig:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
-    def hierarchy_settings(self) -> dict[str, Any]:
-        return {key: value for key, value in asdict(self).items() if (
-            key in {"hierarchy", "soft_links", "sentence_prototype_weight"}
-            or key.startswith("merge_") or key.startswith("soft_") or key.startswith("synonym_")
-        )}
-
     def routing_settings(self) -> dict[str, Any]:
         """Settings that must match when replaying a route for an E ablation."""
         return {key: value for key, value in asdict(self).items() if (
-            key == "routing" or key == "soft_transition_weight"
+            key in {"routing", "sentence_view"}
             or key.startswith(("seed_", "diffusion_", "activation_", "candidate_", "preview_", "route_"))
             or key in {"bottom_up_weight", "restart"}
         )}

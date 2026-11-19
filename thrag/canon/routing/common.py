@@ -3,34 +3,46 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
 from canon.core.config import CanonConfig
 from canon.core.contracts import Branch, QueryContext
-from canon.core.evidence import EvidenceStore
 from canon.hierarchy import HierarchyArtifacts
 
 
+@dataclass
+class RouteScores:
+    topics: dict[str, float]
+    paths: dict[Branch, float]
+
+
 def activation_scores(
-    context: QueryContext, store: EvidenceStore, hierarchy: HierarchyArtifacts, config: CanonConfig,
-) -> dict[str, float]:
-    labels = hierarchy.label_vectors @ context.vector
-    scores: dict[str, float] = {}
-    for position, node_id in enumerate(hierarchy.order):
-        indices = hierarchy.nodes[node_id]["sentences"]
-        values = context.sentence_scores[indices]
-        count = min(config.activation_top_n, len(values))
-        evidence = float(np.partition(values, len(values) - count)[-count:].mean()) if count else 0.0
-        scores[node_id] = config.activation_label_weight * float(labels[position]) + (1 - config.activation_label_weight) * evidence
-    return scores
+    context: QueryContext, hierarchy: HierarchyArtifacts, config: CanonConfig,
+) -> RouteScores:
+    semantic = hierarchy.semantic_scores(context.vector)
+    paths: dict[Branch, float] = {}
+    topics: dict[str, float] = {}
+    weight = config.activation_label_weight
+    for path, score in zip(hierarchy.branches, semantic, strict=True):
+        indices = hierarchy.branch_sentences[path]
+        if len(indices) == 1:
+            evidence = float(context.sentence_scores[indices[0]])
+        else:
+            values = context.sentence_scores[indices]
+            count = min(config.activation_top_n, len(values))
+            evidence = float(np.partition(values, len(values) - count)[-count:].mean())
+        paths[path] = weight * float(score) + (1 - weight) * evidence
+        topics[path[0]] = max(topics.get(path[0], -np.inf), paths[path])
+    return RouteScores(topics, paths)
 
 
-def ranked_paths(hierarchy: HierarchyArtifacts, scores: dict[str, float], topics: int, subtopics: int) -> list[Branch]:
-    selected_topics = sorted(hierarchy.children, key=lambda node: (-scores.get(node, 0.0), node))[:topics]
+def ranked_paths(hierarchy: HierarchyArtifacts, scores: RouteScores, topics: int, subtopics: int) -> list[Branch]:
+    selected_topics = sorted(hierarchy.children, key=lambda node: (-scores.topics[node], node))[:topics]
     children = {
-        topic: sorted(hierarchy.children[topic], key=lambda node: (-scores.get(node, 0.0), node))[:subtopics]
+        topic: sorted(hierarchy.children[topic], key=lambda node: (-scores.paths[topic, node], node))[:subtopics]
         for topic in selected_topics
     }
     # Interleave by child rank so prompt trimming preserves strong paths from multiple topics.
@@ -49,8 +61,8 @@ def bounded_paths(paths: list[Branch], topic_limit: int, subtopic_limit: int) ->
     return result
 
 
-def path_scores(paths: list[Branch], scores: dict[str, float]) -> dict[Branch, float]:
-    return {path: (scores.get(path[0], 0.0) + scores.get(path[1], 0.0)) / 2 for path in paths}
+def path_scores(paths: list[Branch], scores: RouteScores) -> dict[Branch, float]:
+    return {path: scores.paths[path] for path in paths}
 
 
 def limits(runtime: Any) -> tuple[int, int]:
